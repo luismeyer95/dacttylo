@@ -1,4 +1,5 @@
 #![allow(dead_code, unused)]
+mod game_state;
 mod network;
 use clap::{load_yaml, ArgMatches};
 use clap::{AppSettings, Arg, Parser};
@@ -6,12 +7,13 @@ use network::message;
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute,
+    execute, queue,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use once_cell::sync::OnceCell;
 use std::path::Path;
 use std::{
+    borrow::Cow,
     error::Error,
     io,
     path::Prefix,
@@ -61,6 +63,7 @@ fn is_valid_file(val: &str) -> Result<(), String> {
 fn main() -> Result<(), Box<dyn Error>> {
     parse_opts();
     typebox_app()?;
+
     Ok(())
 }
 
@@ -120,6 +123,7 @@ fn run_app<B: Backend>(
 fn ui<B: Backend>(f: &mut Frame<B>) -> Result<(), Box<dyn Error>> {
     let filename = parse_opts().value_of("file").unwrap();
     let text_content = file_to_string(filename)?;
+    let text_content = "\t\t\nhello";
 
     let size = f.size();
     let block = Block::default().style(Style::default().bg(Color::Black).fg(Color::White));
