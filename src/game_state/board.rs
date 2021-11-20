@@ -1,65 +1,33 @@
-#![feature(iter_intersperse)]
-
+use crossterm::cursor;
+use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::env::current_dir;
 use std::error::Error;
 use std::io::BufRead;
+use std::iter::Peekable;
 use std::ops::{Not, Range};
+use std::str::CharIndices;
+use std::str::FromStr;
 use syntect::easy::{HighlightFile, HighlightLines};
-use syntect::highlighting::{self, Color, FontStyle, Style, ThemeSet};
+use syntect::highlighting::{self, FontStyle, ThemeSet};
 use syntect::parsing::SyntaxSet;
 use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 
-fn load_defaults() -> (&'static SyntaxSet, &'static ThemeSet) {
-    static SYNTAX_SET: OnceCell<SyntaxSet> = OnceCell::new();
-    static THEME_SET: OnceCell<ThemeSet> = OnceCell::new();
-    (
-        SYNTAX_SET.get_or_init(|| SyntaxSet::load_defaults_newlines()),
-        THEME_SET.get_or_init(|| ThemeSet::load_defaults()),
-    )
-}
+mod style;
+use style::Style;
+type SyntectStyle = syntect::highlighting::Style;
+type TuiStyle = tui::style::Style;
+type Color = tui::style::Color;
 
-fn file_to_string(s: &str) -> Result<String, std::io::Error> {
-    std::fs::read_to_string(std::path::Path::new(s))
-}
-
-fn split_token_bytes((style, token): (Style, &str)) -> Vec<(Style, &str)> {
-    token
-        .chars()
-        .enumerate()
-        .map(|(i, _)| (style.clone(), &token[i..i + 1]))
-        .collect::<Vec<(Style, &str)>>()
-}
-
-fn to_token_markers(line: Vec<(Style, &str)>) -> Vec<TokenMarker> {
-    line.iter()
-        .map(|token_tup| {
-            if token_tup.1.contains('\t') {
-                split_token_bytes(*token_tup)
-            } else {
-                vec![*token_tup]
-            }
-        })
-        .flatten()
-        .scan(0, |idx, (style, slice)| {
-            let tkref = TokenMarker {
-                range: *idx..*idx + slice.len(),
-                style,
-            };
-            *idx += slice.len();
-            Some(tkref)
-        })
-        .collect::<Vec<TokenMarker>>()
-}
-
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct Cursor {
-    index: usize,
-    style: Style,
-    precedence: u8,
+    pub index: usize,
+    pub style: Style,
+    pub precedence: u8,
 }
 
 #[derive(Debug)]
@@ -68,145 +36,204 @@ struct TokenMarker {
     style: Style,
 }
 
+#[derive(Default)]
 struct Board {
     text: String,
     tokens: Vec<TokenMarker>,
-    cursors: Vec<Cursor>,
+    cursors: HashMap<String, Cursor>,
 }
 
 struct BoardIter<'a> {
-    // text: &'a str,
     board: &'a Board,
-    // tokens: Vec<(&'a TokenMarker)>, // cur_text_index: usize,
+    display_cursors: Vec<&'a Cursor>,
+
+    text_iter: CharIndices<'a>,
     token_idx: usize,
     cursor_idx: usize,
-    queue: VecDeque<(&'a str, Style)>,
 }
 
 impl<'a> BoardIter<'a> {
-    pub fn new(board: &'a Board) -> Self {
-        if !Self::cursors_are_sorted(&board.cursors) {
-            panic!("board iterator logic depends on cursors being sorted by index");
-        }
-        Self {
-            board,
-            cursor_idx: 0,
-            token_idx: 0,
-            queue: VecDeque::<_>::default(),
-        }
-    }
-
-    fn cursors_are_sorted(cursors: &[Cursor]) -> bool {
-        cursors.windows(2).all(|p| p[0].index <= p[1].index)
-    }
-
-    fn enqueue_token(&mut self, token: &TokenMarker) {
-        let slice = &self.board.text[token.range.clone()];
-        self.queue.push_back((slice, token.style));
-    }
-
-    fn split_enqueue(&mut self, token: &TokenMarker, cursors: &[&Cursor]) {
-        let mut cursor_idx = 0;
-        let mut slice_start = token.range.start;
-        for i in token.range.clone() {
-            if let Some(&cursor) = cursors.get(cursor_idx) {
-                if slice_start < i {
-                    let tkn: (&str, Style) = (&self.board.text[slice_start..i], token.style);
-                    self.queue.push_back(tkn);
-                }
-                self.queue
-                    .push_back((&self.board.text[i..i + 1], cursor.style));
-                slice_start = i + 1;
-                cursor_idx += 1;
-            }
-        }
-        if slice_start < token.range.end {
-            self.queue
-                .push_back((&self.board.text[slice_start..token.range.end], token.style));
-        };
-    }
-
-    fn resolve_cursor_precedence(cursors: Vec<&Cursor>) -> Vec<&Cursor> {
-        let mut precedence_map: BTreeMap<usize, &Cursor> = BTreeMap::new();
-        for c in cursors {
-            let v = precedence_map.entry(c.index).or_insert(c);
+    fn resolve_displayed_cursors(cursors: &'a HashMap<String, Cursor>) -> Vec<&'a Cursor> {
+        let mut precedence_map: BTreeMap<usize, &'a Cursor> = BTreeMap::new();
+        for (_, c) in cursors {
+            let v = precedence_map.entry(c.index).or_insert_with(|| c);
             if c.precedence > v.precedence {
                 precedence_map.insert(c.index, c);
             }
         }
-        precedence_map
-            .into_iter()
-            .map(|(_, c)| c)
-            .collect::<Vec<&Cursor>>()
+        precedence_map.into_iter().map(|(_, c)| c).collect()
     }
 
-    fn pop_cursors_in_range<'b>(
-        cursors: &'b Vec<Cursor>,
-        cursor_idx: &mut usize,
-        token: &TokenMarker,
-    ) -> Option<Vec<&'b Cursor>> {
-        let cursors_slice = cursors.get(*cursor_idx..)?;
-
-        let cursors_in_range = cursors_slice
-            .iter()
-            .take_while(|&c| token.range.contains(&c.index))
-            .collect::<Vec<&Cursor>>();
-        *cursor_idx += cursors_in_range.len();
-
-        cursors_in_range
-            .is_empty()
-            .not()
-            .then(|| Self::resolve_cursor_precedence(cursors_in_range))
+    fn resolve_token_style(&mut self, index: usize, board: &'a Board) -> &'a Style {
+        let mut tkn = board.tokens.get(self.token_idx).unwrap();
+        if tkn.range.contains(&index).not() {
+            self.token_idx += 1;
+            tkn = board.tokens.get(self.token_idx).unwrap();
+        }
+        &tkn.style
     }
 
-    fn process_token(&mut self, token: &TokenMarker) {
-        match Self::pop_cursors_in_range(&self.board.cursors, &mut self.cursor_idx, token) {
-            Some(cursors) => self.split_enqueue(token, &cursors),
-            None => self.enqueue_token(token),
-        };
+    pub fn new(board: &'a Board) -> BoardIter<'a> {
+        let display_cursors = Self::resolve_displayed_cursors(&board.cursors);
+        Self {
+            board,
+            display_cursors,
+            text_iter: board.text.char_indices(),
+            cursor_idx: 0,
+            token_idx: 0,
+        }
     }
 }
 
 impl<'a> Iterator for BoardIter<'a> {
-    type Item = (&'a str, Style);
+    type Item = (char, &'a Style);
 
     fn next(&mut self) -> Option<<Self as Iterator>::Item> {
-        if let Some(queued_item) = self.queue.pop_front() {
-            return Some(queued_item);
-        } else if let Some(token) = self.board.tokens.get(self.token_idx) {
-            self.process_token(token);
-        }
+        let (i, ch) = self.text_iter.next()?;
+        let tkn = self.resolve_token_style(i, self.board);
 
-        self.queue.pop_front()
+        let item = match self.display_cursors.get(self.cursor_idx) {
+            Some(&cursor) => (cursor.index == i)
+                .then(|| self.cursor_idx += 1)
+                .map_or_else(|| (ch, tkn), |_| (ch, &cursor.style)),
+            None => (ch, tkn),
+        };
+        Some(item)
     }
 }
 
 impl Board {
     pub fn new(file_path: &str) -> Result<Board, Box<dyn Error>> {
-        let (syntax_set, theme_set) = load_defaults();
+        let (syntax_set, theme_set) = Self::load_defaults();
         let syntax = syntax_set
             .find_syntax_for_file(file_path)
             .unwrap()
             .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
 
-        let text = file_to_string(file_path).unwrap();
+        let text = std::fs::read_to_string(std::path::Path::new(file_path))?;
         let mut highlighter = HighlightLines::new(syntax, &theme_set.themes["base16-ocean.dark"]);
-
-        let mut tokenized_contents: Vec<TokenMarker> = vec![];
-        for line in LinesWithEndings::from(&text) {
-            let mut tokens: Vec<(Style, &str)> = highlighter.highlight(&line, &syntax_set);
-            let mut tokens = to_token_markers(tokens);
-            tokenized_contents.extend(tokens);
-        }
+        let mut token_marks = Self::tokenize_text(&text, highlighter);
 
         Ok(Board {
             text,
-            tokens: tokenized_contents,
-            cursors: vec![],
+            tokens: token_marks,
+            cursors: HashMap::new(),
+        })
+    }
+
+    pub fn from_str(text: &str, syntax_ext: &str) -> Result<Board, Box<dyn Error>> {
+        let (syntax_set, theme_set) = Self::load_defaults();
+        let syntax = syntax_set
+            .find_syntax_by_extension(syntax_ext)
+            .expect("syntax extension not found");
+
+        let mut highlighter = HighlightLines::new(syntax, &theme_set.themes["base16-ocean.dark"]);
+        let mut token_marks = Self::tokenize_text(text, highlighter);
+
+        Ok(Board {
+            text: text.to_string(),
+            tokens: token_marks,
+            cursors: HashMap::new(),
         })
     }
 
     pub fn iter(&self) -> BoardIter {
         BoardIter::new(self)
+    }
+
+    pub fn iter_token(&self) -> BoardIter {
+        let mut prev_style: Option<Style> = None;
+        let mut buffer: &str = &"";
+        // BoardIter::new(self).map(|(ch, style)| match prev_style {
+        //     Some(prev_style) => {
+        //         if (style == prev_style) {
+        //         } else {
+        //         }
+        //     }
+        //     None => (),
+        // });
+        todo!()
+    }
+
+    pub fn get_cursor(&mut self, key: &str) -> Entry<String, Cursor> {
+        self.cursors.entry(key.to_string())
+    }
+
+    pub fn remove_cursor(&mut self, key: &str) {
+        self.cursors.remove(key);
+    }
+
+    fn load_defaults() -> (&'static SyntaxSet, &'static ThemeSet) {
+        static SYNTAX_SET: OnceCell<SyntaxSet> = OnceCell::new();
+        static THEME_SET: OnceCell<ThemeSet> = OnceCell::new();
+        (
+            SYNTAX_SET.get_or_init(|| SyntaxSet::load_defaults_newlines()),
+            THEME_SET.get_or_init(|| ThemeSet::load_defaults()),
+        )
+    }
+
+    fn tokenize_text(text: &str, mut highlighter: HighlightLines) -> Vec<TokenMarker> {
+        let (syntax_set, theme_set) = Self::load_defaults();
+
+        let mut tokenized_contents: Vec<(SyntectStyle, &str)> = vec![];
+        for line in LinesWithEndings::from(&text) {
+            let mut tokens: Vec<(SyntectStyle, &str)> = highlighter.highlight(&line, &syntax_set);
+            tokenized_contents.extend(tokens);
+        }
+
+        Self::to_token_markers(tokenized_contents)
+    }
+
+    fn to_token_markers(line: Vec<(SyntectStyle, &str)>) -> Vec<TokenMarker> {
+        let mut result: Vec<TokenMarker> = vec![];
+        let mut accumulated_index: usize = 0;
+        for (style, slice) in line {
+            let tk_marker = TokenMarker {
+                range: accumulated_index..accumulated_index + slice.len(),
+                style: style.into(),
+            };
+            accumulated_index += slice.len();
+            result.push(tk_marker);
+        }
+        result
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn iter_test() {
+        let mut b = Board::new("file.rs").unwrap();
+
+        let luis_cursor = Cursor {
+            index: 2,
+            style: TuiStyle::default().fg(Color::Red).bg(Color::White).into(),
+            precedence: 0,
+        };
+
+        let agathe_cursor = Cursor {
+            index: 1,
+            style: TuiStyle::default().fg(Color::Blue).bg(Color::White).into(),
+            precedence: 1,
+        };
+
+        // b.set_cursor("luis", cursor)
+        let l = b.get_cursor("luis").or_insert(luis_cursor);
+        let a = b.get_cursor("agathe").or_insert(agathe_cursor);
+
+        for tkn in b.iter() {
+            println!("{:?} {:?}", tkn.0, tkn.1.foreground);
+        }
+    }
+
+    #[test]
+    fn board_test() {
+        let mut b = Board::new("file.rs").unwrap();
+
+        b.tokens
+            .iter()
+            .for_each(|el| println!("{:?} {:?}", &b.text[el.range.clone()], el.style.foreground));
     }
 }
