@@ -1,6 +1,8 @@
 #![allow(dead_code, unused)]
 mod game_state;
 mod network;
+mod typeview;
+
 use clap::{load_yaml, ArgMatches};
 use clap::{AppSettings, Arg, Parser};
 use network::message;
