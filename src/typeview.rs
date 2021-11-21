@@ -222,6 +222,6 @@ impl<'a> Widget for TypeView<'a> {
         //apply highlighting
         let highlighted_lines = self.syntax_styling.highlight(&view_slice);
 
-        let transformed_lines = self.transform_symbols(highlighted_lines);
+        let transformed_lines = self.transform_symbols();
     }
 }
