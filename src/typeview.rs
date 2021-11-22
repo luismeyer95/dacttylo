@@ -4,6 +4,7 @@ use once_cell::sync::OnceCell;
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
+use std::collections::hash_map::Entry::Occupied;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::env::current_dir;
 use std::error::Error;
@@ -24,9 +25,8 @@ use tui::{
     style::Style,
     text::{StyledGrapheme, Text},
     widgets::{
-        // reflow::{LineComposer, LineTruncator, WordWrapper},
-        Block,
-        Widget,
+        reflow::{LineComposer, LineTruncator, WordWrapper},
+        Block, Widget,
     },
 };
 use unicode_segmentation::UnicodeSegmentation;
@@ -38,10 +38,54 @@ fn input_width(s: &str) -> usize {
     UnicodeSegmentation::graphemes(s, true).count()
 }
 
+/// Converts a 1D text buffer position into a tuple containing
+/// line number and a character index into that line
+fn text_to_line_index(
+    index: usize,
+    text_lines: &Vec<&str>,
+) -> Result<(usize, usize), &'static str> {
+    let mut cur_index = index;
+    for (i, &line) in text_lines.iter().enumerate() {
+        let w = input_width(&line);
+        if (w > cur_index) {
+            return Ok((i, cur_index));
+        }
+        cur_index -= w;
+    }
+    Err("index out of bounds")
+}
+
+fn line_to_text_index(ln_index: usize, text_lines: Vec<&str>) -> Result<usize, &'static str> {
+    if ln_index > text_lines.len() {
+        Err("index out of bounds")
+    } else {
+        Ok(text_lines
+            .into_iter()
+            .enumerate()
+            .take_while(|(i, el)| i != &ln_index)
+            .fold(0, |acc, (i, el)| acc + input_width(&el)))
+    }
+}
+
+fn slice_diff<T>(a: &[T], b: &[T]) -> usize {
+    b.as_ptr() as usize - a.as_ptr() as usize
+}
+
+fn styled_graphemes<'tkn>(text: &[(&'tkn str, tui::style::Style)]) -> Vec<StyledGrapheme<'tkn>> {
+    text.into_iter()
+        .flat_map(|(token, style)| {
+            token.graphemes(true).map(|g| StyledGrapheme {
+                symbol: g,
+                style: style.clone(),
+            })
+        })
+        .collect()
+}
+
 /// An implementation of this trait will be given to a Typeview object
 /// on instantiation
 pub trait Highlighter {
-    fn highlight(&self, text: &str) -> Vec<(&str, tui::style::Style)>;
+    fn highlight<'txt>(&self, text: &'txt str) -> Vec<(&'txt str, tui::style::Style)>;
 }
 
 const TAB_SYMBOL: &str = "\u{21e5}";
@@ -59,7 +103,7 @@ struct TypeView<'a> {
 
     /// Sparse styling applied after the syntax highlight pass.
     /// Used for cursors and special application logic highlighting
-    sparse_styling: Vec<(usize, tui::style::Style)>,
+    sparse_styling: HashMap<usize, tui::style::Style>,
 }
 
 impl<'a> TypeView<'a> {
@@ -67,7 +111,7 @@ impl<'a> TypeView<'a> {
         text: &'a str,
         context_pos: usize,
         syntax_styling: Box<dyn Highlighter>,
-        sparse_styling: Vec<(usize, tui::style::Style)>,
+        sparse_styling: HashMap<usize, tui::style::Style>,
     ) -> Self {
         Self {
             text,
@@ -77,53 +121,12 @@ impl<'a> TypeView<'a> {
         }
     }
 
-    /// Converts a 1D text buffer position into a tuple containing
-    /// line number and a character index into that line
-    fn text_to_line_index(
-        index: usize,
-        text_lines: &Vec<&str>,
-    ) -> Result<(usize, usize), &'static str> {
-        let mut cur_index = index;
-        for (i, &line) in text_lines.iter().enumerate() {
-            let w = input_width(&line);
-            if (w > cur_index) {
-                return Ok((i, cur_index));
-            }
-            cur_index -= w;
-        }
-        Err("index out of bounds")
-    }
-
-    fn line_to_text_index(ln_index: usize, text_lines: Vec<&str>) -> Result<usize, &'static str> {
-        if ln_index > text_lines.len() {
-            Err("index out of bounds")
-        } else {
-            Ok(text_lines
-                .into_iter()
-                .enumerate()
-                .take_while(|(i, el)| i != &ln_index)
-                .fold(0, |acc, (i, el)| acc + input_width(&el)))
-        }
-    }
-
-    fn filter_viewable_sparse_styling(
-        &mut self,
-        start: usize,
-        end: usize,
-    ) -> Vec<(usize, tui::style::Style)> {
-        self.sparse_styling
-            .iter()
-            .cloned()
-            .filter(|(i, _)| i >= &start && i < &end)
-            .collect::<Vec<_>>()
-    }
-
     fn get_view<'lines>(
         &self,
         view_height: usize,
         text_lines: &'lines Vec<&'a str>,
     ) -> &'lines [&str] {
-        let (ctx_line_nb, _) = Self::text_to_line_index(self.context_pos, &text_lines).unwrap();
+        let (ctx_line_nb, _) = text_to_line_index(self.context_pos, &text_lines).unwrap();
 
         let lower_bound = ctx_line_nb.saturating_sub(view_height / 2);
         let upper_bound = std::cmp::min(
@@ -134,77 +137,83 @@ impl<'a> TypeView<'a> {
         &text_lines[lower_bound..upper_bound]
     }
 
-    fn offset_sparse_stylings(&mut self, offset_index: usize, len: usize) {
-        for (styled_idx, style) in &mut self.sparse_styling {
-            if *styled_idx > offset_index {
-                *styled_idx += len - 1;
+    fn remap_symbol<'txt>(
+        inline_index: usize,
+        grapheme: StyledGrapheme<'txt>,
+    ) -> Vec<StyledGrapheme<'txt>> {
+        match grapheme.symbol {
+            "\n" => vec![StyledGrapheme {
+                symbol: NL_SYMBOL,
+                style: grapheme
+                    .style
+                    .patch(tui::style::Style::default().fg(tui::style::Color::Yellow)),
+            }],
+            "\t" => {
+                let tab_width = (4 - inline_index % 4) as u8;
+                let style = grapheme
+                    .style
+                    .patch(tui::style::Style::default().fg(tui::style::Color::Yellow));
+
+                vec![StyledGrapheme {
+                    symbol: TAB_SYMBOL,
+                    style,
+                }]
+                .into_iter()
+                .chain(vec![
+                    StyledGrapheme { symbol: " ", style };
+                    (tab_width - 1) as usize
+                ])
+                .collect()
             }
+            _ => vec![grapheme],
         }
     }
 
-    fn transform_symbols(
-        &mut self,
-        view_line_offset: usize,
-        hl_lines: Vec<(&'a str, tui::style::Style)>,
-    ) -> Vec<StyledGrapheme> {
-        let graphemes = Self::styled_graphemes(&hl_lines);
+    fn create_key_graphemes_map(lines: Vec<(&str, tui::style::Style)>) -> Vec<Vec<StyledGrapheme>> {
+        let graphemes = styled_graphemes(&lines);
 
-        let line_pos_it = hl_lines.iter().flat_map(|(tkn, _)| {
+        let inline_index_it = lines.iter().flat_map(|(tkn, _)| {
             tkn.graphemes(true)
                 .enumerate()
                 .map(|(i, _)| i)
                 .collect::<Vec<usize>>()
         });
 
-        graphemes
-            .into_iter()
-            .zip(line_pos_it)
-            .enumerate()
-            .flat_map(|(idx, (gphm, idx_in_line))| match gphm.symbol {
-                "\n" => vec![StyledGrapheme {
-                    symbol: NL_SYMBOL,
-                    style: gphm
-                        .style
-                        .patch(tui::style::Style::default().fg(tui::style::Color::Yellow)),
-                }],
-                "\t" => {
-                    let tab_width = (4 - idx_in_line % 4) as u8;
-                    self.offset_sparse_stylings(idx, tab_width as usize);
-                    let style = gphm
-                        .style
-                        .patch(tui::style::Style::default().fg(tui::style::Color::Yellow));
-                    vec![StyledGrapheme {
-                        symbol: TAB_SYMBOL,
-                        style,
-                    }]
-                    .into_iter()
-                    .chain(vec![
-                        StyledGrapheme { symbol: " ", style };
-                        (tab_width - 1) as usize
-                    ])
-                    .collect()
-                }
-                _ => vec![gphm],
+        itertools::multizip((inline_index_it, graphemes))
+            .map(|(inline_index, gphm)| Self::remap_symbol(inline_index, gphm))
+            .collect::<Vec<Vec<StyledGrapheme>>>()
+    }
+
+    fn apply_sparse_styling<'txt>(
+        &self,
+        mapped_graphemes_it: impl Iterator<Item = (usize, Vec<StyledGrapheme<'txt>>)>,
+    ) -> Vec<StyledGrapheme<'txt>> {
+        mapped_graphemes_it
+            .flat_map(|(i, mut key_as_graphemes)| {
+                self.sparse_styling
+                    .get(&i)
+                    .map(|style| key_as_graphemes[0].style = *style);
+                key_as_graphemes
             })
             .collect()
     }
 
-    fn styled_graphemes<'tkn>(
-        text: &[(&'tkn str, tui::style::Style)],
-    ) -> Vec<StyledGrapheme<'tkn>> {
-        text.into_iter()
-            .flat_map(|(token, style)| {
-                token.graphemes(true).map(|g| StyledGrapheme {
-                    symbol: g,
-                    style: style.clone(),
-                })
-            })
-            .collect()
+    fn transform_to_view<'txt>(
+        &mut self,
+        total_offset: usize,
+        lines: Vec<(&'txt str, tui::style::Style)>,
+    ) -> Vec<StyledGrapheme<'txt>> {
+        let mapped_graphemes_it = Self::create_key_graphemes_map(lines)
+            .into_iter()
+            .enumerate()
+            .map(|(i, key_as_graphemes)| (i + total_offset, key_as_graphemes));
+
+        self.apply_sparse_styling(mapped_graphemes_it)
     }
 }
 
 impl<'a> Widget for TypeView<'a> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+    fn render(mut self, area: Rect, buf: &mut Buffer) {
         // get the output area height to determine the minimum
         // number of lines needed for the view
         let view_linecount = area.height as usize;
@@ -212,16 +221,17 @@ impl<'a> Widget for TypeView<'a> {
         // extract the necessary lines from around the context position
         let text_lines: Vec<&str> = self.text.split_inclusive('\n').collect();
         let view_slice = self.get_view(view_linecount, &text_lines);
+        let diff = slice_diff(&view_slice, &text_lines);
 
         let view_slice = view_slice
             .into_iter()
-            .map(|s| s.chars())
-            .flatten()
+            .flat_map(|s| s.chars())
             .collect::<String>();
 
         //apply highlighting
+        // let syntax_styling = std::mem::take(&mut self.syntax_styling).unwrap();
         let highlighted_lines = self.syntax_styling.highlight(&view_slice);
 
-        let transformed_lines = self.transform_symbols();
+        let transformed_lines = self.transform_to_view(diff, highlighted_lines);
     }
 }
