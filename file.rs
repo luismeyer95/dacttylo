@@ -1,5 +1,5 @@
 pub struct Wow {
-    thi: u64,
+	thi: u64
 }
 
-fn blah() -> u64 {}
+ 	fn bloh() -> u64 {	}

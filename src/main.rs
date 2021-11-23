@@ -1,6 +1,7 @@
 #![allow(dead_code, unused)]
 mod game_state;
 mod network;
+mod reflow;
 mod typeview;
 
 use clap::{load_yaml, ArgMatches};
@@ -13,6 +14,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use once_cell::sync::OnceCell;
+use std::collections::HashMap;
 use std::path::Path;
 use std::{
     borrow::Cow,
@@ -30,6 +32,8 @@ use tui::{
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame, Terminal,
 };
+
+use crate::typeview::TypeView;
 
 fn parse_opts() -> &'static ArgMatches {
     static OPTS: OnceCell<ArgMatches> = OnceCell::new();
@@ -80,7 +84,7 @@ fn typebox_app() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let tick_rate = Duration::from_millis(200);
+    let tick_rate = Duration::from_millis(0);
     let res = run_app(&mut terminal, tick_rate);
 
     // restore terminal
@@ -100,8 +104,9 @@ fn run_app<B: Backend>(
     tick_rate: Duration,
 ) -> Result<(), Box<dyn Error>> {
     let mut last_tick = Instant::now();
+    let mut index: usize = 0;
     loop {
-        terminal.draw(|f| ui(f).unwrap())?;
+        terminal.draw(|f| ui(f, index).unwrap())?;
 
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
@@ -110,6 +115,7 @@ fn run_app<B: Backend>(
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Char(' ') => index += 1,
                     _ => {}
                 }
             }
@@ -122,10 +128,10 @@ fn run_app<B: Backend>(
     }
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>) -> Result<(), Box<dyn Error>> {
+fn ui<B: Backend>(f: &mut Frame<B>, index: usize) -> Result<(), Box<dyn Error>> {
     let filename = parse_opts().value_of("file").unwrap();
     let text_content = file_to_string(filename)?;
-    let text_content = "\t\t\nhello";
+    // let text_content = "\t\t\nhello";
 
     let size = f.size();
     let block = Block::default().style(Style::default().bg(Color::Black).fg(Color::White));
@@ -137,17 +143,19 @@ fn ui<B: Backend>(f: &mut Frame<B>) -> Result<(), Box<dyn Error>> {
         .constraints([Constraint::Percentage(100)].as_ref())
         .split(size);
 
-    let paragraph = Paragraph::new(text_content)
-        .style(Style::default())
+    let typeview = TypeView::new(&text_content)
+        .context_pos(index)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .style(Style::default()),
         )
-        .alignment(Alignment::Left)
-        .wrap(Wrap { trim: false })
-        .scroll((0, 0));
-    f.render_widget(paragraph, chunks[0]);
+        .sparse_styling(HashMap::<usize, Style>::from_iter(vec![(
+            index,
+            Style::default().bg(Color::White),
+        )]));
+
+    f.render_widget(typeview, chunks[0]);
 
     Ok(())
 }
