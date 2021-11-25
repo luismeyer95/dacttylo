@@ -1,158 +1,113 @@
-use crossterm::cursor;
-use itertools::Itertools;
-use once_cell::sync::OnceCell;
-use std::cell::{Cell, RefCell};
-use std::cmp::Ordering;
-use std::collections::hash_map::Entry;
-use std::collections::hash_map::Entry::Occupied;
-use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::env::current_dir;
-use std::error::Error;
-use std::hash::Hash;
-use std::io::BufRead;
-use std::iter::Peekable;
-use std::ops::{Not, Range};
-use std::str::CharIndices;
-use std::str::FromStr;
-use syntect::easy::{HighlightFile, HighlightLines};
-use syntect::highlighting::{self, FontStyle, ThemeSet};
-use syntect::parsing::SyntaxSet;
-use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
+use std::collections::HashMap;
+use std::ops::Range;
 
-use std::iter;
 use tui::{
     buffer::Buffer,
-    layout::{Alignment, Rect},
-    style::Style,
-    text::{StyledGrapheme, Text},
+    layout::Rect,
+    text::StyledGrapheme,
     widgets::{Block, Widget},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::reflow::{LineComposer, WordWrapper};
+use crate::highlight::{Highlighter, SyntectHighlight};
+use crate::utils;
+use crate::utils::reflow::{LineComposer, WordWrapper};
 
-fn input_width(s: &str) -> usize {
-    UnicodeSegmentation::graphemes(s, true).count()
+struct FocusView<'l> {
+    rows: Vec<&'l str>,
+    context_pos: usize,
 }
 
-/// Converts a 1D text buffer position into a tuple containing
-/// line number and a character index into that line
-fn text_to_line_index(
-    index: usize,
-    text_lines: &Vec<&str>,
-) -> Result<(usize, usize), &'static str> {
-    let mut offset = index;
-    for (ln_index, &line) in text_lines.iter().enumerate() {
-        let ln_width = input_width(&line);
-        if (0..ln_width).contains(&offset) {
-            return Ok((ln_index, offset));
+impl<'l> FocusView<'l> {
+    pub fn new() -> Self {
+        Self {
+            rows: vec![],
+            context_pos: 0,
         }
-        offset -= ln_width;
     }
-    Err("index out of bounds")
-}
 
-fn line_to_text_index(ln_index: usize, text_lines: &[&str]) -> Result<usize, &'static str> {
-    if ln_index > text_lines.len() {
+    pub fn text(mut self, text: &'l str) -> Self {
+        self.rows = text.split_inclusive('\n').collect();
+        self
+    }
+
+    pub fn rows<T: AsRef<str>>(mut self, rows: &'l [T]) -> Self {
+        self.rows = rows.into_iter().map(|x| x.as_ref()).collect();
+        self
+    }
+
+    pub fn context_pos(mut self, context_pos: usize) -> Self {
+        self.context_pos = context_pos;
+        self
+    }
+
+    pub fn get_view_line_range(&self, view_height: usize) -> Range<usize> {
+        // extract the minimum required lines from around the context position (view slice)
+        let (context_line, _) = Self::text_to_line_index(self.context_pos, &self.rows).unwrap();
+        let view_range = Self::compute_vertical_range(context_line, view_height, self.rows.len());
+        view_range
+    }
+
+    pub fn to_flat_range(&self, line_range: Range<usize>) -> Range<usize> {
+        // compute the flat buffer positions of the line range
+        let start = Self::line_to_text_index(line_range.start, &self.rows).unwrap();
+        let end = Self::line_to_text_index(line_range.end, &self.rows).unwrap();
+        start..end
+    }
+
+    // pub fn to_line_range(&self, range: Range<usize>) -> Range<usize> {
+    //     // compute the line positions of the flat buffer range
+    //     let (start, _) = Self::text_to_line_index(range.start, &self.rows).unwrap();
+    //     let (end, _) = Self::text_to_line_index(range.end, &self.rows).unwrap();
+    //     start..end
+    // }
+
+    fn compute_vertical_range(
+        context_line: usize,
+        view_height: usize,
+        total_lines: usize,
+    ) -> Range<usize> {
+        use std::cmp::min;
+
+        if context_line < view_height / 2 {
+            0..min(view_height, total_lines)
+        } else if context_line + view_height / 2 >= total_lines {
+            total_lines.saturating_sub(view_height)..total_lines
+        } else {
+            (context_line - view_height / 2)..(context_line + 1 + view_height / 2)
+        }
+    }
+
+    /// Converts a 1D text buffer position into a tuple containing
+    /// line number and a character index into that line
+    pub fn text_to_line_index<T: AsRef<str>>(
+        index: usize,
+        text_lines: &[T],
+    ) -> Result<(usize, usize), &'static str> {
+        let mut offset = index;
+        for (ln_index, line) in text_lines.iter().enumerate() {
+            let ln_width = utils::tui::input_width(line.as_ref());
+            if (0..ln_width).contains(&offset) {
+                return Ok((ln_index, offset));
+            }
+            offset -= ln_width;
+        }
         Err("index out of bounds")
-    } else {
-        Ok(text_lines
-            .into_iter()
-            .enumerate()
-            .take_while(|(i, el)| i != &ln_index)
-            .fold(0, |acc, (i, el)| acc + input_width(&el)))
-    }
-}
-
-fn slice_diff<T>(a: &[T], b: &[T]) -> usize {
-    b.as_ptr() as usize - a.as_ptr() as usize
-}
-
-fn styled_graphemes<'tkn>(text: &[(&'tkn str, tui::style::Style)]) -> Vec<StyledGrapheme<'tkn>> {
-    text.into_iter()
-        .flat_map(|(token, style)| {
-            token.graphemes(true).map(|g| StyledGrapheme {
-                symbol: g,
-                style: style.clone(),
-            })
-        })
-        .collect()
-}
-
-/// An implementation of this trait will be given to a Typeview object
-/// on instantiation
-pub trait Highlighter {
-    fn highlight<'txt>(&self, text: &'txt str) -> Vec<(&'txt str, tui::style::Style)>;
-}
-
-fn load_defaults() -> (&'static SyntaxSet, &'static ThemeSet) {
-    static SYNTAX_SET: OnceCell<SyntaxSet> = OnceCell::new();
-    static THEME_SET: OnceCell<ThemeSet> = OnceCell::new();
-    (
-        SYNTAX_SET.get_or_init(|| SyntaxSet::load_defaults_newlines()),
-        THEME_SET.get_or_init(|| ThemeSet::load_defaults()),
-    )
-}
-
-fn syntect_to_tui_style(syntect_style: syntect::highlighting::Style) -> tui::style::Style {
-    type TuiStyle = tui::style::Style;
-    type SyntectStyle = syntect::highlighting::Style;
-    type SyntectMod = syntect::highlighting::FontStyle;
-    type TuiMod = tui::style::Modifier;
-    type TuiColor = tui::style::Color;
-
-    let mut style = TuiStyle::default()
-        .fg(tui::style::Color::Rgb(
-            syntect_style.foreground.r,
-            syntect_style.foreground.g,
-            syntect_style.foreground.b,
-        ))
-        .bg(tui::style::Color::Rgb(
-            syntect_style.background.r,
-            syntect_style.background.g,
-            syntect_style.background.b,
-        ));
-    if syntect_style.font_style.contains(SyntectMod::BOLD) {
-        style = style.add_modifier(TuiMod::BOLD)
-    }
-    if syntect_style.font_style.contains(SyntectMod::UNDERLINE) {
-        style = style.add_modifier(TuiMod::UNDERLINED)
-    }
-    if syntect_style.font_style.contains(SyntectMod::ITALIC) {
-        style = style.add_modifier(TuiMod::ITALIC)
     }
 
-    style
-}
-
-struct NoHighlight;
-impl Highlighter for NoHighlight {
-    fn highlight<'txt>(&self, text: &'txt str) -> Vec<(&'txt str, tui::style::Style)> {
-        // vec![(text, Default::default())]
-        let (syntax_set, theme_set) = load_defaults();
-        let syntax = syntax_set
-            .find_syntax_by_extension("rs")
-            .expect("syntax extension not found");
-
-        let mut highlighter = HighlightLines::new(syntax, &theme_set.themes["base16-ocean.dark"]);
-
-        let mut tokenized_contents: Vec<(syntect::highlighting::Style, &str)> = vec![];
-        for line in LinesWithEndings::from(&text) {
-            let mut tokens: Vec<(syntect::highlighting::Style, &str)> =
-                highlighter.highlight(&line, &syntax_set);
-            tokenized_contents.extend(tokens);
+    pub fn line_to_text_index(ln_index: usize, text_lines: &[&str]) -> Result<usize, &'static str> {
+        if ln_index > text_lines.len() {
+            Err("index out of bounds")
+        } else {
+            Ok(text_lines
+                .into_iter()
+                .enumerate()
+                .take_while(|(i, el)| i != &ln_index)
+                .fold(0, |acc, (i, el)| acc + utils::tui::input_width(&el)))
         }
-
-        tokenized_contents
-            .into_iter()
-            .map(|(style, token)| (token, syntect_to_tui_style(style)))
-            .collect()
     }
 }
-
-const TAB_SYMBOL: &str = "\u{21e5}";
-const NL_SYMBOL: &str = "\u{23ce}";
 
 pub struct TypeView<'a> {
     /// The full text buffer
@@ -164,26 +119,30 @@ pub struct TypeView<'a> {
     /// Generic syntax highlighter
     syntax_styling: Box<dyn Highlighter>,
 
-    /// Sparse styling applied after the syntax highlight pass.
-    /// Used for cursors and special application logic highlighting
+    /// Sparse styling applied after the syntax highlight pass,
+    /// used for cursors and special application logic highlighting
     sparse_styling: HashMap<usize, tui::style::Style>,
 
+    /// Enclosing block component
     block: Block<'a>,
+
+    /// Option to override the background color after all styles are applied
+    bg_color: tui::style::Color,
 }
 
 impl<'a> TypeView<'a> {
-    pub fn new(
-        text: &'a str,
-        // context_pos: usize,
-        // syntax_styling: Box<dyn Highlighter>,
-        // sparse_styling: HashMap<usize, tui::style::Style>,
-    ) -> Self {
+    const TAB_SYMBOL: &'static str = "\u{21e5}";
+    const NL_SYMBOL: &'static str = "\u{23ce}";
+    /// Instantiate a Typeview widget from a text buffer and use the builder
+    /// pattern to set custom rendering options
+    pub fn new(text: &'a str) -> Self {
         Self {
             text,
             context_pos: 0,
-            syntax_styling: Box::new(NoHighlight),
+            syntax_styling: Box::new(SyntectHighlight),
             sparse_styling: HashMap::new(),
             block: Default::default(),
+            bg_color: tui::style::Color::Reset,
         }
     }
 
@@ -207,16 +166,39 @@ impl<'a> TypeView<'a> {
         self
     }
 
-    fn get_view_vertical_range<'lines>(
-        &self,
-        view_height: usize,
-        text_lines: &'lines Vec<&'a str>,
-    ) -> Range<usize> {
-        let (ctx_line_nb, _) = text_to_line_index(self.context_pos, &text_lines).unwrap();
-        let lower_bound = ctx_line_nb.saturating_sub(view_height / 2);
-        let rest = view_height.saturating_sub(lower_bound);
-        let upper_bound = std::cmp::min(text_lines.len(), ctx_line_nb.saturating_add(rest));
-        lower_bound..upper_bound
+    pub fn bg_color(mut self, color: tui::style::Color) -> Self {
+        self.bg_color = color;
+        self
+    }
+
+    fn remap_tab(grapheme: StyledGrapheme, inline_index: usize) -> Vec<StyledGrapheme> {
+        let tab_width = (4 - inline_index % 4) as u8;
+        let style = grapheme
+            .style
+            .patch(tui::style::Style::default().fg(tui::style::Color::Yellow));
+
+        vec![StyledGrapheme {
+            symbol: Self::TAB_SYMBOL,
+            style,
+        }]
+        .into_iter()
+        .chain(vec![
+            StyledGrapheme { symbol: " ", style };
+            (tab_width - 1) as usize
+        ])
+        .collect()
+    }
+
+    fn remap_newline(grapheme: StyledGrapheme) -> Vec<StyledGrapheme> {
+        vec![
+            StyledGrapheme {
+                symbol: Self::NL_SYMBOL,
+                style: grapheme
+                    .style
+                    .patch(tui::style::Style::default().fg(tui::style::Color::Yellow)),
+            },
+            grapheme,
+        ]
     }
 
     fn remap_symbol<'txt>(
@@ -224,38 +206,14 @@ impl<'a> TypeView<'a> {
         grapheme: StyledGrapheme<'txt>,
     ) -> Vec<StyledGrapheme<'txt>> {
         match grapheme.symbol {
-            "\n" => vec![
-                StyledGrapheme {
-                    symbol: NL_SYMBOL,
-                    style: grapheme
-                        .style
-                        .patch(tui::style::Style::default().fg(tui::style::Color::Yellow)),
-                },
-                grapheme,
-            ],
-            "\t" => {
-                let tab_width = (4 - inline_index % 4) as u8;
-                let style = grapheme
-                    .style
-                    .patch(tui::style::Style::default().fg(tui::style::Color::Yellow));
-
-                vec![StyledGrapheme {
-                    symbol: TAB_SYMBOL,
-                    style,
-                }]
-                .into_iter()
-                .chain(vec![
-                    StyledGrapheme { symbol: " ", style };
-                    (tab_width - 1) as usize
-                ])
-                .collect()
-            }
+            "\n" => Self::remap_newline(grapheme),
+            "\t" => Self::remap_tab(grapheme, inline_index),
             _ => vec![grapheme],
         }
     }
 
     fn create_key_graphemes_map(lines: Vec<(&str, tui::style::Style)>) -> Vec<Vec<StyledGrapheme>> {
-        let graphemes = styled_graphemes(&lines);
+        let graphemes = utils::tui::styled_graphemes(&lines);
 
         let inline_index_it = lines.iter().flat_map(|(tkn, _)| {
             tkn.graphemes(true)
@@ -283,15 +241,15 @@ impl<'a> TypeView<'a> {
             .collect()
     }
 
-    fn transform_to_view<'txt>(
+    fn apply_transforms<'txt>(
         &mut self,
-        total_offset: usize,
+        start_offset: usize,
         lines: Vec<(&'txt str, tui::style::Style)>,
     ) -> Vec<StyledGrapheme<'txt>> {
         let mapped_graphemes_it = Self::create_key_graphemes_map(lines)
             .into_iter()
             .enumerate()
-            .map(|(i, key_as_graphemes)| (i + total_offset, key_as_graphemes));
+            .map(|(i, key_as_graphemes)| (i + start_offset, key_as_graphemes));
 
         self.apply_sparse_styling(mapped_graphemes_it)
     }
@@ -299,54 +257,82 @@ impl<'a> TypeView<'a> {
     fn wrap_lines(width: u16, graphemes: Vec<StyledGrapheme>) -> Vec<Vec<StyledGrapheme>> {
         let mut graphemes_it = graphemes.into_iter();
 
-        let mut line_composer: Box<dyn LineComposer> =
-            Box::new(WordWrapper::new(&mut graphemes_it, width, false));
+        let mut line_composer = WordWrapper::new(&mut graphemes_it, width, false);
 
         let mut lines: Vec<Vec<StyledGrapheme>> = vec![];
         while let Some((current_line, _)) = line_composer.next_line() {
             lines.push(current_line.into_iter().cloned().collect());
         }
+
         lines
+    }
+
+    fn render_block(&mut self, area: &mut Rect, buf: &mut Buffer) {
+        let block = std::mem::take(&mut self.block);
+
+        // save the inner_area because render consumes the block
+        let inner_area = block.inner(*area);
+        block.render(*area, buf);
+
+        *area = inner_area;
+    }
+
+    fn into_wrapped_view<'txt>(
+        graphemes: Vec<StyledGrapheme<'txt>>,
+        context_pos: usize,
+        area: &Rect,
+    ) -> Vec<Vec<StyledGrapheme<'txt>>> {
+        // once transforms are done we can wrap the lines to the output area width
+        let mut wrapped_lines = Self::wrap_lines(area.width as u16, graphemes);
+
+        let wrapped_view = wrapped_lines
+            .iter()
+            .map(|ln| {
+                ln.into_iter()
+                    .flat_map(|gphm| gphm.symbol.chars())
+                    .collect()
+            })
+            .collect::<Vec<String>>();
+
+        // refocus the context position after wrapping
+        let refocused_view = FocusView::new()
+            .rows(&wrapped_view)
+            .context_pos(context_pos);
+        wrapped_lines
+            .drain(refocused_view.get_view_line_range(area.height as usize))
+            .collect()
+    }
+
+    fn process_view(&mut self, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
+        // split text buffer by newline
+        // extract the minimum required lines from around the context position (view slice)
+        let focus_view = FocusView::new()
+            .text(self.text)
+            .context_pos(self.context_pos);
+        let view_range = focus_view.get_view_line_range(area.height as usize);
+
+        // compute the flat buffer positions of the view line range
+        let Range { start, end } = focus_view.to_flat_range(view_range);
+        let view_slice = &self.text[start..end];
+        // apply highlighting
+        let view_slice = self.syntax_styling.highlight(&view_slice);
+        // apply text transforms and sparse styling
+        let view_slice = self.apply_transforms(start, view_slice);
+
+        Self::into_wrapped_view(view_slice, self.context_pos - start, &area)
     }
 }
 
 impl<'a> Widget for TypeView<'a> {
-    fn render(mut self, area: Rect, buf: &mut Buffer) {
-        let block = std::mem::take(&mut self.block);
-        let inner_area = block.inner(area);
-        block.render(area, buf);
-        let area = inner_area;
+    fn render(mut self, mut area: Rect, buf: &mut Buffer) {
+        self.render_block(&mut area, buf);
         if area.height < 1 || area.width < 1 {
             return;
         }
-        // get the output area height to determine the minimum
-        // number of lines needed for the view
-        let view_height = area.height as usize;
 
-        // extract the necessary lines from around the context position (view slice)
-        let text_lines: Vec<&str> = self.text.split_inclusive('\n').collect();
-        let view_range = self.get_view_vertical_range(view_height, &text_lines);
-        let view_slice = &text_lines[view_range.clone()];
-
-        // saving the total text offset (index of the first character inside the view range)
-        let total_offset = line_to_text_index(view_range.start, &text_lines).unwrap();
-
-        //
-        let view_slice = view_slice
-            .into_iter()
-            .flat_map(|s| s.graphemes(true))
-            .collect::<String>();
-
-        // apply highlighting, obtain styled tokens
-        let highlighted_tokens = self.syntax_styling.highlight(&view_slice);
-        let graphemes = self.transform_to_view(total_offset, highlighted_tokens);
-        let wrapped_lines = Self::wrap_lines(area.width as u16, graphemes);
-
-        if wrapped_lines.len() != 0 && wrapped_lines[0].len() != 0 {
-            buf.set_style(area, wrapped_lines[0][0].style);
-        }
+        let lines = self.process_view(area);
         let mut y = 0;
-        for line in wrapped_lines {
+        for line in lines {
             let mut x = 0;
             for StyledGrapheme { symbol, style } in line {
                 buf.get_mut(area.left() + x, area.top() + y)

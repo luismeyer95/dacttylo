@@ -1,8 +1,9 @@
-#![allow(dead_code, unused)]
+// #![allow(dead_code, unused)]
 mod game_state;
+mod highlight;
 mod network;
-mod reflow;
 mod typeview;
+mod utils;
 
 use clap::{load_yaml, ArgMatches};
 use clap::{AppSettings, Arg, Parser};
@@ -79,12 +80,12 @@ fn typebox_app() -> Result<(), Box<dyn Error>> {
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen,)?;
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let tick_rate = Duration::from_millis(0);
+    let tick_rate = Duration::from_millis(50);
     let res = run_app(&mut terminal, tick_rate);
 
     // restore terminal
@@ -115,7 +116,7 @@ fn run_app<B: Backend>(
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('q') => return Ok(()),
-                    KeyCode::Char(' ') => index += 1,
+                    KeyCode::Char(' ') => index += 10,
                     _ => {}
                 }
             }
@@ -137,25 +138,25 @@ fn ui<B: Backend>(f: &mut Frame<B>, index: usize) -> Result<(), Box<dyn Error>> 
     let block = Block::default().style(Style::default().bg(Color::Black).fg(Color::White));
     f.render_widget(block, size);
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(5)
-        .constraints([Constraint::Percentage(100)].as_ref())
-        .split(size);
+    // let chunks = Layout::default()
+    //     .direction(Direction::Vertical)
+    //     .margin(5)
+    //     .constraints([Constraint::Percentage(100)].as_ref())
+    //     .split(size);
 
     let typeview = TypeView::new(&text_content)
         .context_pos(index)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .style(Style::default()),
-        )
+        // .block(
+        //     Block::default()
+        //         .borders(Borders::ALL)
+        //         .style(Style::default()),
+        // )
         .sparse_styling(HashMap::<usize, Style>::from_iter(vec![(
             index,
             Style::default().bg(Color::White),
         )]));
 
-    f.render_widget(typeview, chunks[0]);
+    f.render_widget(typeview, size);
 
     Ok(())
 }

@@ -15,7 +15,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["debugger"],
+            "args": ["src/game_state/board/style.rs"],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "internalConsoleOptions": "openOnFirstSessionStart"
