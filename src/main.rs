@@ -117,6 +117,7 @@ fn run_app<B: Backend>(
                 match key.code {
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char(' ') => index += 5,
+                    KeyCode::Backspace => index -= 5,
                     _ => {}
                 }
             }
