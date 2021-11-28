@@ -10,7 +10,7 @@ use tui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::highlight::{Highlighter, SyntectHighlight};
+use crate::highlight::{Highlighter, NoHighlight, SyntectHighlight};
 use crate::utils;
 use crate::utils::reflow::{LineComposer, WordWrapper};
 
@@ -27,10 +27,10 @@ impl<'l> FocusView<'l> {
         }
     }
 
-    pub fn text(mut self, text: &'l str) -> Self {
-        self.rows = text.split_inclusive('\n').collect();
-        self
-    }
+    // pub fn text(mut self, text: &'l str) -> Self {
+    //     self.rows = text.split_inclusive('\n').collect();
+    //     self
+    // }
 
     pub fn rows<T: AsRef<str>>(mut self, rows: &'l [T]) -> Self {
         self.rows = rows.into_iter().map(|x| x.as_ref()).collect();
@@ -55,13 +55,6 @@ impl<'l> FocusView<'l> {
         let end = Self::line_to_text_index(line_range.end, &self.rows).unwrap();
         start..end
     }
-
-    // pub fn to_line_range(&self, range: Range<usize>) -> Range<usize> {
-    //     // compute the line positions of the flat buffer range
-    //     let (start, _) = Self::text_to_line_index(range.start, &self.rows).unwrap();
-    //     let (end, _) = Self::text_to_line_index(range.end, &self.rows).unwrap();
-    //     start..end
-    // }
 
     fn compute_vertical_range(
         context_line: usize,
@@ -139,7 +132,7 @@ impl<'a> TypeView<'a> {
         Self {
             text,
             context_pos: 0,
-            syntax_styling: Box::new(SyntectHighlight),
+            syntax_styling: Box::new(NoHighlight),
             sparse_styling: HashMap::new(),
             block: Default::default(),
             bg_color: tui::style::Color::Reset,
@@ -212,48 +205,6 @@ impl<'a> TypeView<'a> {
         }
     }
 
-    fn create_key_graphemes_map(lines: Vec<(&str, tui::style::Style)>) -> Vec<Vec<StyledGrapheme>> {
-        let graphemes = utils::tui::styled_graphemes(&lines);
-
-        let inline_index_it = lines.iter().flat_map(|(tkn, _)| {
-            tkn.graphemes(true)
-                .enumerate()
-                .map(|(i, _)| i)
-                .collect::<Vec<usize>>()
-        });
-
-        itertools::multizip((inline_index_it, graphemes))
-            .map(|(inline_index, gphm)| Self::remap_symbol(inline_index, gphm))
-            .collect::<Vec<Vec<StyledGrapheme>>>()
-    }
-
-    fn apply_sparse_styling<'txt>(
-        &self,
-        mapped_graphemes_it: impl Iterator<Item = (usize, Vec<StyledGrapheme<'txt>>)>,
-    ) -> Vec<StyledGrapheme<'txt>> {
-        mapped_graphemes_it
-            .flat_map(|(i, mut key_as_graphemes)| {
-                self.sparse_styling
-                    .get(&i)
-                    .map(|style| key_as_graphemes[0].style = *style);
-                key_as_graphemes
-            })
-            .collect()
-    }
-
-    fn apply_transforms<'txt>(
-        &mut self,
-        start_offset: usize,
-        lines: Vec<(&'txt str, tui::style::Style)>,
-    ) -> Vec<StyledGrapheme<'txt>> {
-        let mapped_graphemes_it = Self::create_key_graphemes_map(lines)
-            .into_iter()
-            .enumerate()
-            .map(|(i, key_as_graphemes)| (i + start_offset, key_as_graphemes));
-
-        self.apply_sparse_styling(mapped_graphemes_it)
-    }
-
     fn wrap_lines(width: u16, graphemes: Vec<StyledGrapheme>) -> Vec<Vec<StyledGrapheme>> {
         let mut graphemes_it = graphemes.into_iter();
 
@@ -303,19 +254,82 @@ impl<'a> TypeView<'a> {
             .collect()
     }
 
+    pub fn tokens_to_graphemes<'tkn>(
+        tokens: &[Vec<(&'tkn str, tui::style::Style)>],
+    ) -> Vec<StyledGrapheme<'tkn>> {
+        tokens
+            .into_iter()
+            .flat_map(|x| {
+                x.into_iter()
+                    .flat_map(|(token, style)| {
+                        token.graphemes(true).map(|g| StyledGrapheme {
+                            symbol: g,
+                            style: style.clone(),
+                        })
+                    })
+                    .collect::<Vec<StyledGrapheme<'tkn>>>()
+            })
+            .collect()
+    }
+
+    fn apply_sparse_styling<'txt>(
+        &self,
+        mapped_graphemes_it: impl Iterator<Item = (usize, Vec<StyledGrapheme<'txt>>)>,
+    ) -> Vec<StyledGrapheme<'txt>> {
+        mapped_graphemes_it
+            .flat_map(|(i, mut key_as_graphemes)| {
+                self.sparse_styling
+                    .get(&i)
+                    .map(|style| key_as_graphemes[0].style = *style);
+                key_as_graphemes
+            })
+            .collect()
+    }
+
+    fn create_key_graphemes_map(
+        lines: Vec<Vec<(&str, tui::style::Style)>>,
+    ) -> Vec<Vec<StyledGrapheme>> {
+        let graphemes = Self::tokens_to_graphemes(&lines);
+
+        let inline_index_it = lines.iter().flat_map(|tokens| {
+            tokens
+                .into_iter()
+                .flat_map(|(tkn, _)| tkn.graphemes(true))
+                .enumerate()
+                .map(|(i, _)| i)
+        });
+
+        itertools::multizip((inline_index_it, graphemes))
+            .map(|(inline_index, gphm)| Self::remap_symbol(inline_index, gphm))
+            .collect::<Vec<Vec<StyledGrapheme>>>()
+    }
+
+    fn apply_transforms<'txt>(
+        &mut self,
+        start_offset: usize,
+        lines: Vec<Vec<(&'txt str, tui::style::Style)>>,
+    ) -> Vec<StyledGrapheme<'txt>> {
+        let mapped_graphemes_it = Self::create_key_graphemes_map(lines)
+            .into_iter()
+            .enumerate()
+            .map(|(i, key_as_graphemes)| (i + start_offset, key_as_graphemes));
+
+        self.apply_sparse_styling(mapped_graphemes_it)
+    }
+
     fn process_view(&mut self, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
         // split text buffer by newline
+        let lines: Vec<&str> = self.text.split_inclusive('\n').collect();
+
         // extract the minimum required lines from around the context position (view slice)
-        let focus_view = FocusView::new()
-            .text(self.text)
-            .context_pos(self.context_pos);
+        let focus_view = FocusView::new().rows(&lines).context_pos(self.context_pos);
         let view_range = focus_view.get_view_line_range(area.height as usize);
 
         // compute the flat buffer positions of the view line range
-        let Range { start, end } = focus_view.to_flat_range(view_range);
-        let view_slice = &self.text[start..end];
+        let Range { start, end } = focus_view.to_flat_range(view_range.clone());
         // apply highlighting
-        let view_slice = self.syntax_styling.highlight(&view_slice);
+        let view_slice = &lines[view_range.clone()];
+        let view_slice = self.syntax_styling.highlight(view_slice);
         // apply text transforms and sparse styling
         let view_slice = self.apply_transforms(start, view_slice);
 

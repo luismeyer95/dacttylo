@@ -1,24 +1,28 @@
+use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use syntect::easy::HighlightLines;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings};
 
 /// Highlighter trait for applying global text styling before rendering a Typeview widget
 pub trait Highlighter {
-    fn highlight<'txt>(&self, text: &'txt str) -> Vec<(&'txt str, tui::style::Style)>;
+    fn highlight<'txt>(&self, lines: &[&'txt str]) -> Vec<Vec<(&'txt str, tui::style::Style)>>;
 }
 
 /// A no-op default implementation
 pub struct NoHighlight;
 impl Highlighter for NoHighlight {
-    fn highlight<'txt>(&self, text: &'txt str) -> Vec<(&'txt str, tui::style::Style)> {
-        vec![(text, Default::default())]
+    fn highlight<'txt>(&self, lines: &[&'txt str]) -> Vec<Vec<(&'txt str, tui::style::Style)>> {
+        lines
+            .into_iter()
+            .map(|&s| vec![(s, tui::style::Style::default())])
+            .collect()
     }
 }
 
 /// An implementation using the syntect highlighting engine
 pub struct SyntectHighlight;
 impl Highlighter for SyntectHighlight {
-    fn highlight<'txt>(&self, text: &'txt str) -> Vec<(&'txt str, tui::style::Style)> {
+    fn highlight<'txt>(&self, lines: &[&'txt str]) -> Vec<Vec<(&'txt str, tui::style::Style)>> {
         let (syntax_set, theme_set) = Self::load_defaults();
         let syntax = syntax_set
             .find_syntax_by_extension("rs")
@@ -35,18 +39,19 @@ impl Highlighter for SyntectHighlight {
         ];
 
         let mut highlighter = HighlightLines::new(syntax, &theme_set.themes[themes[0]]);
+        let mut tokenized_lines: Vec<Vec<(&str, tui::style::Style)>> = vec![vec![]];
 
-        let mut tokenized_contents: Vec<(syntect::highlighting::Style, &str)> = vec![];
-        for line in LinesWithEndings::from(&text) {
-            let mut tokens: Vec<(syntect::highlighting::Style, &str)> =
-                highlighter.highlight(&line, &syntax_set);
-            tokenized_contents.extend(tokens);
+        for line in lines {
+            let tokens = highlighter.highlight(&line, &syntax_set);
+            tokenized_lines.push(
+                tokens
+                    .into_iter()
+                    .map(|(style, token)| (token, Self::syntect_to_tui_style(style)))
+                    .collect(),
+            );
         }
 
-        tokenized_contents
-            .into_iter()
-            .map(|(style, token)| (token, Self::syntect_to_tui_style(style)))
-            .collect()
+        tokenized_lines
     }
 }
 
