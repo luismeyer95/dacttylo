@@ -2,8 +2,8 @@
 mod game_state;
 mod highlight;
 mod network;
-mod typeview;
-// mod textview;
+// mod typeview;
+mod textview;
 mod utils;
 
 use clap::{load_yaml, ArgMatches};
@@ -16,6 +16,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use once_cell::sync::OnceCell;
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::Path;
 use std::{
@@ -36,7 +37,8 @@ use tui::{
     Frame, Terminal,
 };
 
-use crate::typeview::TypeView;
+// use crate::typeview::TypeView;
+use crate::textview::TextView;
 
 fn parse_opts() -> &'static ArgMatches {
     static OPTS: OnceCell<ArgMatches> = OnceCell::new();
@@ -147,8 +149,14 @@ fn ui<B: Backend>(f: &mut Frame<B>, index: usize) -> Result<(), Box<dyn Error>> 
     //     .constraints([Constraint::Percentage(100)].as_ref())
     //     .split(size);
 
-    let typeview = TypeView::new(&text_content)
-        .context_pos(index)
+    let cell = Cell::new(0);
+
+    let typeview = TextView::new(text_content.split_inclusive('\n').collect())
+        // let typeview = TypeView::new(&text_content)
+        // .context_pos(index)
+        .on_wrap(Box::new(|x, y| {
+            cell.set(cell.get() + 1);
+        }))
         .block(
             Block::default()
                 .borders(Borders::ALL)
