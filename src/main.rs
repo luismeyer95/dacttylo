@@ -3,6 +3,7 @@ mod game_state;
 mod highlight;
 mod network;
 mod typeview;
+// mod textview;
 mod utils;
 
 use clap::{load_yaml, ArgMatches};
@@ -25,6 +26,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tui::text::{self, Text};
+use tui::widgets::BorderType;
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout},
@@ -147,14 +149,16 @@ fn ui<B: Backend>(f: &mut Frame<B>, index: usize) -> Result<(), Box<dyn Error>> 
 
     let typeview = TypeView::new(&text_content)
         .context_pos(index)
-        // .block(
-        //     Block::default()
-        //         .borders(Borders::ALL)
-        //         .style(Style::default()),
-        // )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .style(Style::default()),
+        )
+        .bg_color(Color::Rgb(0, 27, 46))
         .sparse_styling(HashMap::<usize, Style>::from_iter(vec![(
             index,
-            Style::default().bg(Color::White),
+            Style::default().bg(Color::White).fg(Color::Black),
         )]));
 
     f.render_widget(typeview, size);

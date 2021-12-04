@@ -229,7 +229,7 @@ impl<'a> TypeView<'a> {
         let mut transformed_line: Vec<StyledGrapheme> = vec![];
         transformed_line.push(StyledGrapheme {
             symbol: "~ ",
-            style: tui::style::Style::default().fg(tui::style::Color::Rgb(100, 100, 100)),
+            style: tui::style::Style::default(),
         });
 
         for gphm in graphemes.into_iter() {

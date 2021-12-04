@@ -15,7 +15,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["src/game_state/board/style.rs"],
+            "args": ["src/network/message.rs"],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "internalConsoleOptions": "openOnFirstSessionStart"
