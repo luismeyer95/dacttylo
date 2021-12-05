@@ -39,6 +39,7 @@ use tui::{
 
 // use crate::typeview::TypeView;
 use crate::textview::TextView;
+use crate::textview::{EditorRenderer, EditorView};
 
 fn parse_opts() -> &'static ArgMatches {
     static OPTS: OnceCell<ArgMatches> = OnceCell::new();
@@ -151,25 +152,25 @@ fn ui<B: Backend>(f: &mut Frame<B>, index: usize) -> Result<(), Box<dyn Error>> 
 
     let cell = Cell::new(0);
 
-    let typeview = TextView::new(text_content.split_inclusive('\n').collect())
-        // let typeview = TypeView::new(&text_content)
-        // .context_pos(index)
-        .on_wrap(Box::new(|x, y| {
-            cell.set(cell.get() + 1);
-        }))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Thick)
-                .style(Style::default()),
-        )
-        .bg_color(Color::Rgb(0, 27, 46))
-        .sparse_styling(HashMap::<usize, Style>::from_iter(vec![(
-            index,
-            Style::default().bg(Color::White).fg(Color::Black),
-        )]));
+    // let typeview = TextView::new(text_content.split_inclusive('\n').collect())
+    //     .on_wrap(Box::new(|x, y| {
+    //         cell.set(cell.get() + 1);
+    //     }))
+    //     .block(
+    //         Block::default()
+    //             .borders(Borders::ALL)
+    //             .border_type(BorderType::Thick)
+    //             .style(Style::default()),
+    //     )
+    //     .bg_color(Color::Rgb(0, 27, 46))
+    //     .sparse_styling(HashMap::<usize, Style>::from_iter(vec![(
+    //         index,
+    //         Style::default().bg(Color::White).fg(Color::Black),
+    //     )]));
+    // f.render_widget(typeview, size);
 
-    f.render_widget(typeview, size);
+    let mut typeview = EditorView::new(text_content.split_inclusive('\n').collect());
+    f.render_stateful_widget(&typeview.renderer(), size, &mut typeview);
 
     Ok(())
 }

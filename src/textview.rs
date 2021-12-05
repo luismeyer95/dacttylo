@@ -5,6 +5,7 @@ use syntect::highlighting::Style;
 use tui::{
     buffer::Buffer,
     layout::Rect,
+    style::Color,
     text::StyledGrapheme,
     widgets::{Block, StatefulWidget, Widget},
 };
@@ -274,50 +275,78 @@ impl<'a> Widget for TextView<'a> {
 
 ////////////////////////////////////////////////////////////
 
+pub enum ViewCommand {
+    SetStart(usize),
+    SetEnd(usize),
+    ShiftUntil(usize),
+    CenterOn(usize),
+}
+
 pub struct RenderMetadata {
-    line_rowcount_map: Vec<usize>,
-    buffer_height: u16,
+    /// Height of the last render buffer
+    pub buffer_height: u16,
+    /// Mapping from line number to total number of rows after wrapping
+    pub line_rows_map: Vec<usize>,
 }
 
 pub struct EditorView<'a> {
+    /// Full linesplit text buffer, only a subset will be rendered each frame
     pub text_lines: Vec<&'a str>,
-    pub view_anchor: usize,
-    pub tracked_line: usize,
 
-    pub last_render: RenderMetadata,
+    /// The current line offset to use for rendering
+    pub anchor: usize,
+
+    /// The view command to process on the next render
+    pub command: ViewCommand,
+
+    /// Metadata on the previous frame to compute the next frame
+    pub last_render: Option<RenderMetadata>,
 }
 
-impl<'a> StatefulWidget for TextView<'a> {
+impl<'a> EditorView<'a> {
+    pub fn new(text_lines: Vec<&'a str>) -> Self {
+        Self {
+            text_lines,
+            anchor: 0,
+            command: ViewCommand::SetStart(0),
+            last_render: None,
+        }
+    }
+
+    pub fn command(&mut self, cmd: ViewCommand) {
+        self.command = cmd;
+    }
+
+    pub fn renderer(&self) -> EditorRenderer {
+        EditorRenderer
+    }
+
+    fn compute_next_anchor(&mut self, area: &Rect) -> usize {
+        todo!();
+    }
+}
+
+pub struct EditorRenderer;
+
+impl<'a> StatefulWidget for &'a EditorRenderer {
     type State = EditorView<'a>;
 
-    fn render(mut self, mut area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        self.render_block(&mut area, buf);
-        if area.height < 1 || area.width < 1 {
-            return;
-        }
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        let new_anchor = match state.last_render.as_ref() {
+            Some(last_render) => state.compute_next_anchor(&area),
+            None => state.anchor,
+        };
 
-        let bg_style = tui::style::Style::default().bg(self.bg_color);
-        for y in 0..area.height {
-            for x in 0..area.width {
-                let cell = buf.get_mut(area.left() + x, area.top() + y);
-                cell.set_style(cell.style().patch(bg_style));
-            }
-        }
+        let lines = state.text_lines[new_anchor..].to_vec();
 
-        let lines = self.process_view(area);
-        let mut y = 0;
-        for line in lines {
-            let mut x = 0;
-            for StyledGrapheme { symbol, style } in line {
-                buf.get_mut(area.left() + x, area.top() + y)
-                    .set_symbol(if symbol.is_empty() { " " } else { symbol })
-                    .set_style(style);
-                x += symbol.width() as u16;
-            }
-            y += 1;
-            if y >= area.height {
-                break;
-            }
-        }
+        let typeview = TextView::new(lines)
+            .bg_color(Color::Rgb(0, 27, 46))
+            .sparse_styling(HashMap::<usize, tui::style::Style>::from_iter(vec![(
+                0,
+                tui::style::Style::default()
+                    .bg(Color::White)
+                    .fg(Color::Black),
+            )]));
+        typeview.render(area, buf);
     }
 }
