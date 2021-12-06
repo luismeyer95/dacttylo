@@ -5,24 +5,30 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings
 
 /// Highlighter trait for applying global text styling before rendering a Typeview widget
 pub trait Highlighter {
-    fn highlight<'txt>(&self, lines: &[&'txt str]) -> Vec<Vec<(&'txt str, tui::style::Color)>>;
+    fn highlight<'txt>(&mut self, lines: &[&'txt str]) -> Vec<Vec<(&'txt str, tui::style::Color)>>;
+    fn highlight_line<'txt>(&mut self, line: &'txt str) -> Vec<(&'txt str, tui::style::Color)>;
 }
 
 /// A no-op default implementation
 pub struct NoHighlight;
 impl Highlighter for NoHighlight {
-    fn highlight<'txt>(&self, lines: &[&'txt str]) -> Vec<Vec<(&'txt str, tui::style::Color)>> {
-        lines
-            .into_iter()
-            .map(|&s| vec![(s, tui::style::Color::White)])
-            .collect()
+    fn highlight<'txt>(&mut self, lines: &[&'txt str]) -> Vec<Vec<(&'txt str, tui::style::Color)>> {
+        lines.into_iter().map(|&s| self.highlight_line(s)).collect()
+    }
+
+    fn highlight_line<'txt>(&mut self, line: &'txt str) -> Vec<(&'txt str, tui::style::Color)> {
+        vec![(line, tui::style::Color::White)]
     }
 }
 
 /// An implementation using the syntect highlighting engine
-pub struct SyntectHighlight;
-impl Highlighter for SyntectHighlight {
-    fn highlight<'txt>(&self, lines: &[&'txt str]) -> Vec<Vec<(&'txt str, tui::style::Color)>> {
+pub struct SyntectHighlight {
+    syntax_set: &'static SyntaxSet,
+    highlighter: HighlightLines<'static>,
+}
+
+impl SyntectHighlight {
+    pub fn new() -> SyntectHighlight {
         let (syntax_set, theme_set) = Self::load_defaults();
         let syntax = syntax_set
             .find_syntax_by_extension("rs")
@@ -38,33 +44,14 @@ impl Highlighter for SyntectHighlight {
             "InspiredGitHub",
         ];
 
-        let mut highlighter = HighlightLines::new(syntax, &theme_set.themes[themes[0]]);
-        let mut tokenized_lines: Vec<Vec<(&str, tui::style::Color)>> = vec![];
+        let highlighter = HighlightLines::new(syntax, &theme_set.themes[themes[0]]);
 
-        for line in lines {
-            let tokens = highlighter.highlight(&line, &syntax_set);
-            tokenized_lines.push(
-                tokens
-                    .into_iter()
-                    .map(|(style, token)| {
-                        (
-                            token,
-                            tui::style::Color::Rgb(
-                                style.foreground.r,
-                                style.foreground.g,
-                                style.foreground.b,
-                            ),
-                        )
-                    })
-                    .collect(),
-            );
+        SyntectHighlight {
+            syntax_set,
+            highlighter,
         }
-
-        tokenized_lines
     }
-}
 
-impl SyntectHighlight {
     fn load_defaults() -> (&'static SyntaxSet, &'static ThemeSet) {
         static SYNTAX_SET: OnceCell<SyntaxSet> = OnceCell::new();
         static THEME_SET: OnceCell<ThemeSet> = OnceCell::new();
@@ -99,5 +86,34 @@ impl SyntectHighlight {
         }
 
         style
+    }
+}
+impl Highlighter for SyntectHighlight {
+    fn highlight<'txt>(&mut self, lines: &[&'txt str]) -> Vec<Vec<(&'txt str, tui::style::Color)>> {
+        let mut tokenized_lines: Vec<Vec<(&str, tui::style::Color)>> =
+            Vec::<_>::with_capacity(lines.len());
+
+        for line in lines {
+            tokenized_lines.push(self.highlight_line(line));
+        }
+
+        tokenized_lines
+    }
+
+    fn highlight_line<'txt>(&mut self, line: &'txt str) -> Vec<(&'txt str, tui::style::Color)> {
+        let tokens = self.highlighter.highlight(&line, &self.syntax_set);
+        tokens
+            .into_iter()
+            .map(|(style, token)| {
+                (
+                    token,
+                    tui::style::Color::Rgb(
+                        style.foreground.r,
+                        style.foreground.g,
+                        style.foreground.b,
+                    ),
+                )
+            })
+            .collect()
     }
 }

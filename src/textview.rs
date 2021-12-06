@@ -12,20 +12,33 @@ use tui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::highlight::{Highlighter, NoHighlight, SyntectHighlight};
+use crate::line_processor::LineProcessor;
 use crate::utils;
 use crate::utils::reflow::{LineComposer, WordWrapper};
+use crate::{
+    highlight::{Highlighter, NoHighlight, SyntectHighlight},
+    line_stylizer::LineStylizer,
+};
+
+pub enum Anchor {
+    Start(usize),
+    End(usize),
+}
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
+pub struct TextCoord(pub usize, pub usize);
 
 pub struct TextView<'a> {
     /// The full text buffer
     text_lines: Vec<&'a str>,
 
-    /// Generic syntax highlighter
-    syntax_styling: Box<dyn Highlighter>,
+    /// Controls the view offset behaviour
+    anchor: Anchor,
+
+    line_processor: Box<dyn LineProcessor>,
 
     /// Sparse styling applied after the syntax highlight pass,
     /// used for cursors and special application logic highlighting
-    sparse_styling: HashMap<usize, tui::style::Style>,
+    sparse_styling: HashMap<TextCoord, tui::style::Style>,
 
     /// Enclosing block component
     block: Block<'a>,
@@ -33,24 +46,25 @@ pub struct TextView<'a> {
     /// Option to override the background color after all styles are applied
     bg_color: tui::style::Color,
 
-    /// Optional closure to set external UI state from the wrapped view slice
-    wrap_event_handler: Option<Box<dyn Fn(Vec<usize>, u16) + 'a>>,
+    /// Optional closure to set external UI state from the list of displayed lines
+    /// on render
+    metadata_handler: Option<Box<dyn Fn(Range<usize>) + 'a>>,
 }
 
 impl<'a> TextView<'a> {
-    const TAB_SYMBOL: &'static str = "\u{21e5}";
-    const NL_SYMBOL: &'static str = "\u{23ce}";
-
     /// Instantiate a TextView widget from a line buffer and use the builder
     /// pattern to set custom rendering options
     pub fn new(text_lines: Vec<&'a str>) -> Self {
         Self {
             text_lines,
-            syntax_styling: Box::new(SyntectHighlight),
+            line_processor: Box::new(
+                LineStylizer::new().syntax_styling(Box::new(SyntectHighlight::new())),
+            ),
+            anchor: Anchor::Start(0),
             sparse_styling: HashMap::new(),
             block: Default::default(),
             bg_color: tui::style::Color::Reset,
-            wrap_event_handler: None,
+            metadata_handler: None,
         }
     }
 
@@ -59,12 +73,26 @@ impl<'a> TextView<'a> {
         self
     }
 
-    pub fn syntax_styling(mut self, syntax_styling: Box<dyn Highlighter>) -> Self {
-        self.syntax_styling = syntax_styling;
+    pub fn line_processor(mut self, line_processor: Box<dyn LineProcessor>) -> Self {
+        self.line_processor = line_processor;
         self
     }
 
-    pub fn sparse_styling(mut self, sparse_styling: HashMap<usize, tui::style::Style>) -> Self {
+    pub fn anchor(mut self, anchor: Anchor) -> Self {
+        match &anchor {
+            Anchor::Start(anchor) if *anchor >= self.text_lines.len() => {
+                panic!("anchor out of bounds")
+            }
+            Anchor::End(anchor) if *anchor > self.text_lines.len() => {
+                panic!("anchor out of bounds")
+            }
+            _ => {}
+        }
+        self.anchor = anchor;
+        self
+    }
+
+    pub fn sparse_styling(mut self, sparse_styling: HashMap<TextCoord, tui::style::Style>) -> Self {
         self.sparse_styling = sparse_styling;
         self
     }
@@ -74,12 +102,12 @@ impl<'a> TextView<'a> {
         self
     }
 
-    /// Pass a closure to this function to set external UI state.
-    /// The closure is passed
+    /// Pass a callback to this function to set external UI state.
+    /// The callback is passed
     /// - a vector of line heights (acts as a map from line number to row count)
     /// - the height of the text view render buffer
-    pub fn on_wrap(mut self, closure: Box<dyn Fn(Vec<usize>, u16) + 'a>) -> Self {
-        self.wrap_event_handler = Some(closure);
+    pub fn on_wrap(mut self, callback: Box<dyn Fn(Range<usize>) + 'a>) -> Self {
+        self.metadata_handler = Some(callback);
         self
     }
 
@@ -94,149 +122,92 @@ impl<'a> TextView<'a> {
     }
 
     fn process_view(&mut self, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
-        // split text buffer by newline
+        match self.anchor {
+            Anchor::Start(anchor) => self.process_anchor_start(anchor, area),
+            Anchor::End(anchor) => self.process_anchor_end(anchor, area),
+        }
+    }
+
+    fn process_anchor_start(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
         let lines = std::mem::take(&mut self.text_lines);
-        let view_slice = &lines[0..area.height as usize];
-        let view_slice = self.syntax_styling.highlight(view_slice);
-        // apply text transforms and sparse styling
-        let view_slice = self.apply_transforms(0, view_slice);
+        let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
+        let mut current_ln = anchor;
 
-        // once transforms are done we can wrap the lines to the output area width
-        let wrapped_slice = Self::wrap_lines(area.width, view_slice);
-
-        // call the wrap handler for consumers to update UI state between renders
-        if let Some(func) = self.wrap_event_handler.take() {
-            func(wrapped_slice.iter().map(|v| v.len()).collect(), area.height);
+        while current_ln < lines.len() {
+            let mut line_as_rows = self.line_to_rows(current_ln, lines[current_ln], &area);
+            if line_as_rows.len() + rows.len() > area.height as usize {
+                break;
+            }
+            rows.extend(line_as_rows);
+            current_ln += 1;
         }
 
-        wrapped_slice.into_iter().flat_map(|v| v).collect()
+        // passing the actually displayed line range
+        if let Some(metadata_handler) = &self.metadata_handler {
+            metadata_handler(anchor..current_ln);
+        }
+
+        rows
     }
 
-    fn apply_transforms<'txt>(
+    fn extract_ln_styling(
+        map: &HashMap<TextCoord, tui::style::Style>,
+        ln_offset: usize,
+    ) -> HashMap<usize, tui::style::Style> {
+        map.iter()
+            .filter_map(|(coord, &style)| (coord.0 == ln_offset).then(|| (coord.1, style)))
+            .collect()
+    }
+
+    fn line_to_rows<'txt>(
         &mut self,
-        mut key_offset: usize,
-        lines: Vec<Vec<(&'txt str, tui::style::Color)>>,
+        line_nb: usize,
+        line: &'txt str,
+        area: &Rect,
     ) -> Vec<Vec<StyledGrapheme<'txt>>> {
-        lines
-            .into_iter()
-            .map(|tkns_line| Self::tokens_to_graphemes(tkns_line.as_slice()))
-            .map(|graphemes_line| {
-                let transformed_line = self.transform_line(key_offset, &graphemes_line);
-                key_offset += graphemes_line.iter().count();
-                transformed_line
-            })
-            .collect()
+        let styling = Self::extract_ln_styling(&self.sparse_styling, line_nb);
+        self.line_processor.process_line(line, styling, area.width)
     }
 
-    fn tokens_to_graphemes<'tkn>(
-        tokens: &[(&'tkn str, tui::style::Color)],
-    ) -> Vec<StyledGrapheme<'tkn>> {
-        tokens
-            .into_iter()
-            .flat_map(|(token, color)| {
-                token.graphemes(true).map(|g| StyledGrapheme {
-                    symbol: g,
-                    style: tui::style::Style::default().fg(*color),
-                })
-            })
-            .collect::<Vec<StyledGrapheme<'tkn>>>()
-    }
+    fn process_anchor_end(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
+        let lines = std::mem::take(&mut self.text_lines);
+        let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
+        let mut current_ln = anchor - 1;
 
-    fn transform_line<'txt>(
-        &self,
-        accumulated_offset: usize,
-        graphemes: &[StyledGrapheme<'txt>],
-    ) -> Vec<StyledGrapheme<'txt>> {
-        let mut key_offset = accumulated_offset;
-        let mut inline_offset = 0;
-        let mut transformed_line: Vec<StyledGrapheme> = vec![];
-        transformed_line.push(StyledGrapheme {
-            symbol: "~ ",
-            style: tui::style::Style::default(),
-        });
+        loop {
+            let mut line_as_rows = self.line_to_rows(current_ln, lines[current_ln], &area);
+            if line_as_rows.len() + rows.len() > area.height as usize {
+                break;
+            }
 
-        for gphm in graphemes.into_iter() {
-            let remapped_key = Self::remap_symbol(gphm.clone(), inline_offset);
-            let styled_key = self.apply_sparse_styling(key_offset, remapped_key);
-            let size = styled_key.iter().count();
-
-            transformed_line.extend(styled_key);
-
-            key_offset += 1;
-            inline_offset += size;
-        }
-        transformed_line
-    }
-
-    fn remap_symbol<'txt>(
-        grapheme: StyledGrapheme<'txt>,
-        inline_index: usize,
-    ) -> Vec<StyledGrapheme<'txt>> {
-        match grapheme.symbol {
-            "\n" => Self::remap_newline(grapheme),
-            "\t" => Self::remap_tab(grapheme, inline_index),
-            _ => vec![grapheme],
-        }
-    }
-
-    fn remap_tab(grapheme: StyledGrapheme, inline_index: usize) -> Vec<StyledGrapheme> {
-        let tab_width = (4 - inline_index % 4) as u8;
-        let style = grapheme
-            .style
-            .patch(tui::style::Style::default().fg(tui::style::Color::Yellow));
-
-        vec![StyledGrapheme {
-            symbol: Self::TAB_SYMBOL,
-            style,
-        }]
-        .into_iter()
-        .chain(vec![
-            StyledGrapheme { symbol: " ", style };
-            (tab_width - 1) as usize
-        ])
-        .collect()
-    }
-
-    fn remap_newline(grapheme: StyledGrapheme) -> Vec<StyledGrapheme> {
-        vec![
-            StyledGrapheme {
-                symbol: Self::NL_SYMBOL,
-                style: grapheme
-                    .style
-                    .patch(tui::style::Style::default().fg(tui::style::Color::Yellow)),
-            },
-            grapheme,
-        ]
-    }
-
-    fn apply_sparse_styling<'txt>(
-        &self,
-        key_offset: usize,
-        mut key_as_graphemes: Vec<StyledGrapheme<'txt>>,
-    ) -> Vec<StyledGrapheme<'txt>> {
-        self.sparse_styling
-            .get(&key_offset)
-            .map(|style| key_as_graphemes[0].style = *style);
-        key_as_graphemes
-    }
-
-    fn wrap_lines(width: u16, lines: Vec<Vec<StyledGrapheme>>) -> Vec<Vec<Vec<StyledGrapheme>>> {
-        lines
-            .into_iter()
-            .map(|line| Self::wrap_line(width, line))
-            .collect()
-    }
-
-    fn wrap_line(width: u16, graphemes: Vec<StyledGrapheme>) -> Vec<Vec<StyledGrapheme>> {
-        let mut graphemes_it = graphemes.into_iter();
-        let mut line_composer = WordWrapper::new(&mut graphemes_it, width, false);
-        let mut lines: Vec<Vec<StyledGrapheme>> = vec![];
-
-        while let Some((current_line, _)) = line_composer.next_line() {
-            lines.push(current_line.into_iter().cloned().collect());
+            line_as_rows.extend(rows);
+            rows = line_as_rows;
+            match current_ln.checked_sub(1) {
+                Some(next) => current_ln = next,
+                None => break,
+            }
         }
 
-        lines
+        let start_ln = current_ln + 1;
+
+        current_ln = anchor;
+        while current_ln < lines.len() {
+            let mut line_as_rows = self.line_to_rows(current_ln, lines[current_ln], &area);
+            if line_as_rows.len() + rows.len() > area.height as usize {
+                break;
+            }
+            rows.extend(line_as_rows);
+            current_ln += 1;
+        }
+
+        let end_ln = current_ln;
+
+        // passing the actually displayed line range
+        if let Some(metadata_handler) = &self.metadata_handler {
+            metadata_handler(start_ln..end_ln);
+        }
+
+        rows
     }
 }
 
@@ -339,14 +310,14 @@ impl<'a> StatefulWidget for &'a EditorRenderer {
 
         let lines = state.text_lines[new_anchor..].to_vec();
 
-        let typeview = TextView::new(lines)
-            .bg_color(Color::Rgb(0, 27, 46))
-            .sparse_styling(HashMap::<usize, tui::style::Style>::from_iter(vec![(
-                0,
-                tui::style::Style::default()
-                    .bg(Color::White)
-                    .fg(Color::Black),
-            )]));
-        typeview.render(area, buf);
+        // let typeview = TextView::new(lines)
+        //     .bg_color(Color::Rgb(0, 27, 46))
+        //     .sparse_styling(HashMap::<usize, tui::style::Style>::from_iter(vec![(
+        //         0,
+        //         tui::style::Style::default()
+        //             .bg(Color::White)
+        //             .fg(Color::Black),
+        //     )]));
+        // typeview.render(area, buf);
     }
 }

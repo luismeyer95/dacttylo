@@ -3,6 +3,8 @@ mod game_state;
 mod highlight;
 mod network;
 // mod typeview;
+mod line_processor;
+mod line_stylizer;
 mod textview;
 mod utils;
 
@@ -38,8 +40,9 @@ use tui::{
 };
 
 // use crate::typeview::TypeView;
+use crate::textview::Anchor;
 use crate::textview::TextView;
-use crate::textview::{EditorRenderer, EditorView};
+use crate::textview::{EditorRenderer, EditorView, TextCoord};
 
 fn parse_opts() -> &'static ArgMatches {
     static OPTS: OnceCell<ArgMatches> = OnceCell::new();
@@ -121,8 +124,8 @@ fn run_app<B: Backend>(
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('q') => return Ok(()),
-                    KeyCode::Char(' ') => index += 5,
-                    KeyCode::Backspace => index -= 5,
+                    KeyCode::Char(' ') => index += 1,
+                    KeyCode::Backspace => index -= 1,
                     _ => {}
                 }
             }
@@ -151,26 +154,28 @@ fn ui<B: Backend>(f: &mut Frame<B>, index: usize) -> Result<(), Box<dyn Error>> 
     //     .split(size);
 
     let cell = Cell::new(0);
+    let lines: Vec<&str> = text_content.split_inclusive('\n').collect();
 
-    // let typeview = TextView::new(text_content.split_inclusive('\n').collect())
-    //     .on_wrap(Box::new(|x, y| {
-    //         cell.set(cell.get() + 1);
-    //     }))
-    //     .block(
-    //         Block::default()
-    //             .borders(Borders::ALL)
-    //             .border_type(BorderType::Thick)
-    //             .style(Style::default()),
-    //     )
-    //     .bg_color(Color::Rgb(0, 27, 46))
-    //     .sparse_styling(HashMap::<usize, Style>::from_iter(vec![(
-    //         index,
-    //         Style::default().bg(Color::White).fg(Color::Black),
-    //     )]));
-    // f.render_widget(typeview, size);
+    let typeview = TextView::new(lines.clone())
+        .anchor(Anchor::Start(index))
+        .on_wrap(Box::new(|displayed_range| {
+            cell.set(cell.get() + 1);
+        }))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Thick)
+                .style(Style::default()),
+        )
+        .bg_color(Color::Rgb(0, 27, 46))
+        .sparse_styling(HashMap::<TextCoord, Style>::from_iter(vec![(
+            TextCoord(index, 0),
+            Style::default().bg(Color::White).fg(Color::Black),
+        )]));
+    f.render_widget(typeview, size);
 
-    let mut typeview = EditorView::new(text_content.split_inclusive('\n').collect());
-    f.render_stateful_widget(&typeview.renderer(), size, &mut typeview);
+    // let mut typeview = EditorView::new(text_content.split_inclusive('\n').collect());
+    // f.render_stateful_widget(&typeview.renderer(), size, &mut typeview);
 
     Ok(())
 }
