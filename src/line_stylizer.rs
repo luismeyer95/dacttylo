@@ -8,15 +8,12 @@ use crate::{
 use tui::text::StyledGrapheme;
 use unicode_segmentation::UnicodeSegmentation;
 
-pub struct LineStylizer {
-    /// Generic syntax highlighter
-    syntax_styling: Box<dyn Highlighter>,
-}
+pub struct LineStylizer;
 
 impl LineProcessor for LineStylizer {
     fn process_line<'txt>(
         &mut self,
-        line: &'txt str,
+        line: &[(&'txt str, tui::style::Style)],
         sparse_styling: HashMap<usize, tui::style::Style>,
         width: u16,
     ) -> Vec<Vec<StyledGrapheme<'txt>>> {
@@ -29,58 +26,26 @@ impl LineStylizer {
     const TAB_SYMBOL: &'static str = "\u{21e5}";
     const NL_SYMBOL: &'static str = "\u{23ce}";
 
-    pub fn new() -> Self {
-        LineStylizer {
-            syntax_styling: Box::new(NoHighlight),
-        }
-    }
-
-    pub fn syntax_styling(mut self, syntax_styling: Box<dyn Highlighter>) -> Self {
-        self.syntax_styling = syntax_styling;
-        self
-    }
-
-    fn tokens_to_graphemes<'tkn>(
-        tokens: &[(&'tkn str, tui::style::Color)],
-    ) -> Vec<StyledGrapheme<'tkn>> {
-        tokens
-            .into_iter()
-            .flat_map(|(token, color)| {
-                token.graphemes(true).map(|g| StyledGrapheme {
-                    symbol: g,
-                    style: tui::style::Style::default().fg(*color),
-                })
-            })
-            .collect::<Vec<StyledGrapheme<'tkn>>>()
-    }
-
-    fn wrap_line(graphemes: Vec<StyledGrapheme>, width: u16) -> Vec<Vec<StyledGrapheme>> {
-        let mut graphemes_it = graphemes.into_iter();
-        let mut line_composer = WordWrapper::new(&mut graphemes_it, width, false);
-        let mut lines: Vec<Vec<StyledGrapheme>> = vec![];
-
-        while let Some((current_line, _)) = line_composer.next_line() {
-            lines.push(current_line.into_iter().cloned().collect());
-        }
-
-        lines
-    }
-
     fn transform_line<'txt>(
         &mut self,
-        line: &'txt str,
+        line: &[(&'txt str, tui::style::Style)],
         sparse_styling: HashMap<usize, tui::style::Style>,
     ) -> Vec<StyledGrapheme<'txt>> {
-        let highlighted = self.syntax_styling.highlight_line(line);
-        let graphemes = Self::tokens_to_graphemes(&highlighted);
+        let graphemes = Self::tokens_to_graphemes(line);
 
         let mut inline_offset = 0;
         let mut key_offset = 0;
         let mut transformed_line: Vec<StyledGrapheme> = vec![];
-        transformed_line.push(StyledGrapheme {
-            symbol: "~ ",
-            style: tui::style::Style::default(),
-        });
+        transformed_line.extend(vec![
+            StyledGrapheme {
+                symbol: "~",
+                style: Default::default(),
+            },
+            StyledGrapheme {
+                symbol: " ",
+                style: Default::default(),
+            },
+        ]);
 
         for gphm in graphemes.into_iter() {
             let remapped_key = Self::remap_symbol(inline_offset, gphm.clone());
@@ -95,6 +60,20 @@ impl LineStylizer {
         transformed_line
     }
 
+    fn tokens_to_graphemes<'tkn>(
+        tokens: &[(&'tkn str, tui::style::Style)],
+    ) -> Vec<StyledGrapheme<'tkn>> {
+        tokens
+            .iter()
+            .flat_map(|(token, style)| {
+                token.graphemes(true).map(|g| StyledGrapheme {
+                    symbol: g,
+                    style: *style,
+                })
+            })
+            .collect::<Vec<StyledGrapheme<'tkn>>>()
+    }
+
     fn apply_sparse_styling<'txt>(
         key_offset: usize,
         mut key_as_graphemes: Vec<StyledGrapheme<'txt>>,
@@ -104,6 +83,13 @@ impl LineStylizer {
             .get(&key_offset)
             .map(|style| key_as_graphemes[0].style = *style);
         key_as_graphemes
+    }
+
+    fn wrap_line(graphemes: Vec<StyledGrapheme>, width: u16) -> Vec<Vec<StyledGrapheme>> {
+        graphemes
+            .chunks((width) as usize)
+            .map(|x| x.to_vec())
+            .collect()
     }
 
     fn remap_symbol<'txt>(
@@ -136,14 +122,11 @@ impl LineStylizer {
     }
 
     fn remap_newline(grapheme: StyledGrapheme) -> Vec<StyledGrapheme> {
-        vec![
-            StyledGrapheme {
-                symbol: Self::NL_SYMBOL,
-                style: grapheme
-                    .style
-                    .patch(tui::style::Style::default().fg(tui::style::Color::Yellow)),
-            },
-            grapheme,
-        ]
+        vec![StyledGrapheme {
+            symbol: Self::NL_SYMBOL,
+            style: grapheme
+                .style
+                .patch(tui::style::Style::default().fg(tui::style::Color::Yellow)),
+        }]
     }
 }

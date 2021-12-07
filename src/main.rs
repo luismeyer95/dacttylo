@@ -3,6 +3,8 @@ mod game_state;
 mod highlight;
 mod network;
 // mod typeview;
+mod editorview;
+mod highlighter;
 mod line_processor;
 mod line_stylizer;
 mod textview;
@@ -40,9 +42,10 @@ use tui::{
 };
 
 // use crate::typeview::TypeView;
+use crate::editorview::EditorView;
 use crate::textview::Anchor;
+use crate::textview::TextCoord;
 use crate::textview::TextView;
-use crate::textview::{EditorRenderer, EditorView, TextCoord};
 
 fn parse_opts() -> &'static ArgMatches {
     static OPTS: OnceCell<ArgMatches> = OnceCell::new();
@@ -114,8 +117,18 @@ fn run_app<B: Backend>(
 ) -> Result<(), Box<dyn Error>> {
     let mut last_tick = Instant::now();
     let mut index: usize = 0;
+
+    let filename = parse_opts().value_of("file").unwrap();
+    let text_content = file_to_string(filename)?;
+    let mut typeview = EditorView::new().content(text_content.split_inclusive('\n').collect());
+    let mut renderer = typeview.renderer();
+
     loop {
-        terminal.draw(|f| ui(f, index).unwrap())?;
+        // terminal.draw(|f| ui(f, index).unwrap())?;
+        typeview = typeview.focus(index);
+        terminal.draw(|f| {
+            f.render_stateful_widget(&renderer, f.size(), &mut typeview);
+        })?;
 
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
@@ -156,23 +169,24 @@ fn ui<B: Backend>(f: &mut Frame<B>, index: usize) -> Result<(), Box<dyn Error>> 
     let cell = Cell::new(0);
     let lines: Vec<&str> = text_content.split_inclusive('\n').collect();
 
-    let typeview = TextView::new(lines.clone())
-        .anchor(Anchor::Start(index))
-        .on_wrap(Box::new(|displayed_range| {
-            cell.set(cell.get() + 1);
-        }))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Thick)
-                .style(Style::default()),
-        )
-        .bg_color(Color::Rgb(0, 27, 46))
-        .sparse_styling(HashMap::<TextCoord, Style>::from_iter(vec![(
-            TextCoord(index, 0),
-            Style::default().bg(Color::White).fg(Color::Black),
-        )]));
-    f.render_widget(typeview, size);
+    // let typeview = TextView::new()
+    //     .content(lines.clone())
+    //     .anchor(Anchor::Start(index))
+    //     .on_wrap(Box::new(|displayed_range| {
+    //         cell.set(cell.get() + 1);
+    //     }))
+    //     .block(
+    //         Block::default()
+    //             .borders(Borders::ALL)
+    //             .border_type(BorderType::Thick)
+    //             .style(Style::default()),
+    //     )
+    //     .bg_color(Color::Rgb(0, 27, 46))
+    //     .sparse_styling(HashMap::<TextCoord, Style>::from_iter(vec![(
+    //         TextCoord(index, 0),
+    //         Style::default().bg(Color::White).fg(Color::Black),
+    //     )]));
+    // f.render_widget(typeview, size);
 
     // let mut typeview = EditorView::new(text_content.split_inclusive('\n').collect());
     // f.render_stateful_widget(&typeview.renderer(), size, &mut typeview);

@@ -15,7 +15,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["src/network/message.rs"],
+            "args": ["src/line_stylizer.rs"],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "internalConsoleOptions": "openOnFirstSessionStart"
