@@ -31,12 +31,33 @@ impl LineStylizer {
         line: &[(&'txt str, tui::style::Style)],
         sparse_styling: HashMap<usize, tui::style::Style>,
     ) -> Vec<StyledGrapheme<'txt>> {
-        let graphemes = Self::tokens_to_graphemes(line);
+        let mut graphemes = Self::tokens_to_graphemes(line);
+        // appending a blank cell for the end of line style case
+        // unconditional to prevent sudden rewrapping on cursor movement
+        graphemes.push(StyledGrapheme {
+            symbol: " ",
+            style: Default::default(),
+        });
 
         let mut inline_offset = 0;
         let mut key_offset = 0;
         let mut transformed_line: Vec<StyledGrapheme> = vec![];
-        transformed_line.extend(vec![
+        Self::set_line_prefix(&mut transformed_line);
+
+        for gphm in graphemes.into_iter() {
+            let remapped_key = Self::remap_symbol(inline_offset, gphm.clone());
+            let styled_key = Self::apply_sparse_styling(key_offset, remapped_key, &sparse_styling);
+            let size = styled_key.iter().count();
+            transformed_line.extend(styled_key);
+            key_offset += 1;
+            inline_offset += size;
+        }
+
+        transformed_line
+    }
+
+    fn set_line_prefix(ln: &mut Vec<StyledGrapheme>) {
+        ln.extend(vec![
             StyledGrapheme {
                 symbol: "~",
                 style: Default::default(),
@@ -46,18 +67,6 @@ impl LineStylizer {
                 style: Default::default(),
             },
         ]);
-
-        for gphm in graphemes.into_iter() {
-            let remapped_key = Self::remap_symbol(inline_offset, gphm.clone());
-            let styled_key = Self::apply_sparse_styling(key_offset, remapped_key, &sparse_styling);
-            let size = styled_key.iter().count();
-
-            transformed_line.extend(styled_key);
-
-            key_offset += 1;
-            inline_offset += size;
-        }
-        transformed_line
     }
 
     fn tokens_to_graphemes<'tkn>(

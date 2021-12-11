@@ -1,4 +1,7 @@
-use crate::textview::{Anchor, TextCoord, TextView};
+use crate::{
+    text_coord::TextCoord,
+    textview::{Anchor, TextView},
+};
 use std::{cell::Cell, collections::HashMap, ops::Range};
 use tui::{
     buffer::Buffer,
@@ -8,25 +11,43 @@ use tui::{
 };
 
 type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;
-pub struct EditorView<'a> {
-    /// Full linesplit text buffer, only a subset will be rendered each frame
-    pub text_lines: Vec<StyledLine<'a>>,
 
+pub struct RenderMetadata {
+    pub buffer_height: u16,
+    pub lines_rendered: Range<usize>,
+}
+pub struct EditorViewState {
     /// The current line offset to use for rendering
-    pub anchor: Cell<usize>,
-    pub last_render: Cell<Option<Range<usize>>>,
+    pub anchor: usize,
 
-    pub focus_line: usize,
+    pub last_render: Option<RenderMetadata>,
+
+    /// The coord to keep in display range
+    pub focus_coord: TextCoord,
 }
 
-impl<'a> EditorView<'a> {
+impl EditorViewState {
     pub fn new() -> Self {
         Self {
-            text_lines: vec![],
-            anchor: 0.into(),
-            last_render: None.into(),
-            focus_line: 0,
+            anchor: 0,
+            last_render: None,
+            focus_coord: TextCoord::new(0, 0),
         }
+    }
+
+    pub fn focus(&mut self, coord: TextCoord) {
+        self.focus_coord = coord;
+    }
+}
+
+pub struct EditorRenderer<'a> {
+    /// Full linesplit text buffer, only a subset will be rendered each frame
+    pub text_lines: Vec<StyledLine<'a>>,
+}
+
+impl<'a> EditorRenderer<'a> {
+    pub fn new() -> Self {
+        Self { text_lines: vec![] }
     }
 
     pub fn content(mut self, lines: Vec<&'a str>) -> Self {
@@ -42,49 +63,49 @@ impl<'a> EditorView<'a> {
         self
     }
 
-    pub fn focus(mut self, line: usize) -> Self {
-        self.focus_line = line;
-        self
-    }
-
-    pub fn renderer(&self) -> EditorRenderer {
-        EditorRenderer
+    fn compute_anchor(state: &mut EditorViewState) -> Anchor {
+        match state.last_render.take() {
+            Some(RenderMetadata {
+                lines_rendered,
+                buffer_height,
+            }) => {
+                // if
+                if state.focus_coord.ln >= lines_rendered.end {
+                    Anchor::End(state.focus_coord.ln + 1)
+                } else if state.focus_coord.ln < lines_rendered.start {
+                    Anchor::Start(state.focus_coord.ln)
+                } else {
+                    Anchor::Start(state.anchor)
+                }
+            }
+            None => Anchor::Start(state.anchor),
+        }
     }
 }
 
-pub struct EditorRenderer;
-
-impl<'a> StatefulWidget for &'a EditorRenderer {
-    type State = EditorView<'a>;
+impl<'a> StatefulWidget for EditorRenderer<'a> {
+    type State = EditorViewState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let anchor = match state.last_render.take() {
-            Some(render) => {
-                if state.focus_line >= render.end {
-                    Anchor::End(state.focus_line + 1)
-                } else if state.focus_line < render.start {
-                    Anchor::Start(state.focus_line)
-                } else {
-                    Anchor::Start(state.anchor.get())
-                }
-            }
-            None => Anchor::Start(state.anchor.get()),
-        };
+        let anchor = Self::compute_anchor(state);
 
-        let typeview = TextView::new()
-            .styled_content(state.text_lines.clone())
+        let view = TextView::new()
+            .styled_content(self.text_lines)
             .anchor(anchor)
-            .on_wrap(Box::new(|displayed_lines| {
-                state.anchor.set(displayed_lines.start);
-                state.last_render.set(Some(displayed_lines));
+            .on_wrap(Box::new(|lines_rendered| {
+                state.anchor = lines_rendered.start;
+                state.last_render = Some(RenderMetadata {
+                    buffer_height: area.height,
+                    lines_rendered,
+                });
             }))
             .bg_color(Color::Rgb(0, 27, 46))
             .sparse_styling(HashMap::<TextCoord, tui::style::Style>::from_iter(vec![(
-                TextCoord(state.focus_line, 0),
+                TextCoord::new(state.focus_coord.ln, state.focus_coord.x),
                 tui::style::Style::default()
                     .bg(Color::White)
                     .fg(Color::Black),
             )]));
-        typeview.render(area, buf);
+        view.render(area, buf);
     }
 }

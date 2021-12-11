@@ -8,8 +8,8 @@ use tui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::line_processor::LineProcessor;
 use crate::line_stylizer::LineStylizer;
+use crate::{line_processor::LineProcessor, text_coord::TextCoord};
 
 type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;
 
@@ -17,8 +17,6 @@ pub enum Anchor {
     Start(usize),
     End(usize),
 }
-#[derive(PartialEq, Eq, Hash, Debug, Clone)]
-pub struct TextCoord(pub usize, pub usize);
 
 pub struct TextView<'a> {
     /// The full text buffer
@@ -40,7 +38,7 @@ pub struct TextView<'a> {
     bg_color: tui::style::Color,
 
     /// Optional closure to set external UI state from the list of displayed lines
-    metadata_handler: Option<Box<dyn Fn(Range<usize>) + 'a>>,
+    metadata_handler: Option<Box<dyn FnMut(Range<usize>) + 'a>>,
 }
 
 impl<'a> TextView<'a> {
@@ -109,7 +107,7 @@ impl<'a> TextView<'a> {
     /// The callback is passed
     /// - a vector of line heights (acts as a map from line number to row count)
     /// - the height of the text view render buffer
-    pub fn on_wrap(mut self, callback: Box<dyn Fn(Range<usize>) + 'a>) -> Self {
+    pub fn on_wrap(mut self, callback: Box<dyn FnMut(Range<usize>) + 'a>) -> Self {
         self.metadata_handler = Some(callback);
         self
     }
@@ -146,7 +144,7 @@ impl<'a> TextView<'a> {
         }
 
         // passing the actually displayed line range
-        if let Some(metadata_handler) = &self.metadata_handler {
+        if let Some(metadata_handler) = &mut self.metadata_handler {
             metadata_handler(anchor..current_ln);
         }
 
@@ -158,7 +156,7 @@ impl<'a> TextView<'a> {
         ln_offset: usize,
     ) -> HashMap<usize, tui::style::Style> {
         map.iter()
-            .filter_map(|(coord, &style)| (coord.0 == ln_offset).then(|| (coord.1, style)))
+            .filter_map(|(coord, &style)| (coord.ln == ln_offset).then(|| (coord.x, style)))
             .collect()
     }
 
@@ -177,21 +175,19 @@ impl<'a> TextView<'a> {
         let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
         let mut current_ln = anchor - 1;
 
-        loop {
+        let start_ln = loop {
             let mut line_as_rows = self.line_to_rows(current_ln, &lines[current_ln], &area);
             if line_as_rows.len() + rows.len() > area.height as usize {
-                break;
+                break current_ln + 1;
             }
 
             line_as_rows.extend(rows);
             rows = line_as_rows;
             match current_ln.checked_sub(1) {
                 Some(next) => current_ln = next,
-                None => break,
+                None => break 0,
             }
-        }
-
-        let start_ln = current_ln + 1;
+        };
 
         current_ln = anchor;
         while current_ln < lines.len() {
@@ -206,7 +202,7 @@ impl<'a> TextView<'a> {
         let end_ln = current_ln;
 
         // passing the actually displayed line range
-        if let Some(metadata_handler) = &self.metadata_handler {
+        if let Some(metadata_handler) = &mut self.metadata_handler {
             metadata_handler(start_ln..end_ln);
         }
 

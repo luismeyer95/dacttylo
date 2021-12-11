@@ -1,0 +1,23 @@
+High level requirements:
+    -> write/delete characters on the screen
+        -> polling key events fom the event bus
+        -> mapping key events to editor actions
+        -> apply actions to editor state
+        -> render the editor state
+            -> provide a highlighted editor state
+                -> if state did not change and a hl state is cached
+                   return the cache
+                -> otherwise...
+                    ST
+                -> rehighlight from touched line synchronously
+                    MT
+                -> kick off background job for highlighting
+                   the text from the first touched line (no cache = 0)
+                -> wait for the first displayable chunk to be ready and
+                   return it
+                -> bg job keeps highlighting in the background
+            -> configure the render using previous frame metadata
+            -> process the highlighted state and render to screen buffer
+            -> save metadata about the render (displayed lines)
+    -> dynamic syntax highlighting
+    -> scrolling/resizing handled properly

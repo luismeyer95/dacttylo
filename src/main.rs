@@ -3,15 +3,19 @@ mod game_state;
 mod highlight;
 mod network;
 // mod typeview;
+mod editor_state;
 mod editorview;
 mod highlighter;
 mod line_processor;
 mod line_stylizer;
+mod text_coord;
 mod textview;
 mod utils;
 
 use clap::{load_yaml, ArgMatches};
 use clap::{AppSettings, Arg, Parser};
+use editor_state::{Cursor, EditorState};
+use editorview::EditorRenderer;
 use network::message;
 
 use crossterm::{
@@ -42,9 +46,8 @@ use tui::{
 };
 
 // use crate::typeview::TypeView;
-use crate::editorview::EditorView;
+use crate::editorview::EditorViewState;
 use crate::textview::Anchor;
-use crate::textview::TextCoord;
 use crate::textview::TextView;
 
 fn parse_opts() -> &'static ArgMatches {
@@ -120,14 +123,16 @@ fn run_app<B: Backend>(
 
     let filename = parse_opts().value_of("file").unwrap();
     let text_content = file_to_string(filename)?;
-    let mut typeview = EditorView::new().content(text_content.split_inclusive('\n').collect());
-    let mut renderer = typeview.renderer();
+
+    let mut editor = EditorState::new();
+    let mut editor_view = EditorViewState::new();
 
     loop {
         // terminal.draw(|f| ui(f, index).unwrap())?;
-        typeview = typeview.focus(index);
+        let mut renderer = EditorRenderer::new().content(editor.get_lines());
+        editor_view.focus(editor.get_cursor());
         terminal.draw(|f| {
-            f.render_stateful_widget(&renderer, f.size(), &mut typeview);
+            f.render_stateful_widget(renderer, f.size(), &mut editor_view);
         })?;
 
         let timeout = tick_rate
@@ -136,9 +141,27 @@ fn run_app<B: Backend>(
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
-                    KeyCode::Char('q') => return Ok(()),
-                    KeyCode::Char(' ') => index += 1,
-                    KeyCode::Backspace => index -= 1,
+                    KeyCode::Esc => return Ok(()),
+                    KeyCode::Enter => {
+                        editor.insert_ln();
+                        editor.move_cursor(Cursor::Down);
+                    }
+                    KeyCode::Tab => {
+                        editor.insert_ch('\t');
+                        editor.move_cursor(Cursor::Right);
+                    }
+                    KeyCode::Char(c) => {
+                        editor.insert_ch(c);
+                        editor.move_cursor(Cursor::Right);
+                    }
+                    KeyCode::Backspace => {
+                        editor.move_cursor(Cursor::Left);
+                        editor.delete_ch();
+                    }
+                    KeyCode::Up => editor.move_cursor(Cursor::Up),
+                    KeyCode::Down => editor.move_cursor(Cursor::Down),
+                    KeyCode::Left => editor.move_cursor(Cursor::Left),
+                    KeyCode::Right => editor.move_cursor(Cursor::Right),
                     _ => {}
                 }
             }
