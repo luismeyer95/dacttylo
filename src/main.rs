@@ -148,15 +148,16 @@ fn run_app<B: Backend>(
                     }
                     KeyCode::Tab => {
                         editor.insert_ch('\t');
-                        editor.move_cursor(Cursor::Right);
+                        editor.offset(1);
                     }
                     KeyCode::Char(c) => {
                         editor.insert_ch(c);
-                        editor.move_cursor(Cursor::Right);
+                        editor.offset(1);
                     }
                     KeyCode::Backspace => {
-                        editor.move_cursor(Cursor::Left);
-                        editor.delete_ch();
+                        if let Some(_) = editor.offset(-1) {
+                            editor.delete_ch();
+                        }
                     }
                     KeyCode::Up => editor.move_cursor(Cursor::Up),
                     KeyCode::Down => editor.move_cursor(Cursor::Down),

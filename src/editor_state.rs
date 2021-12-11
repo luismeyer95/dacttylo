@@ -24,19 +24,25 @@ impl EditorState {
     }
 
     pub fn move_cursor(&mut self, cmd: Cursor) {
+        let cursor_ch = self.cursor_ch();
         match cmd {
             Cursor::Up => {
                 self.cursor.ln = self.cursor.ln.saturating_sub(1);
                 self.cursor.x = min(self.cursor.x, self.text_lines[self.cursor.ln].len());
             }
             Cursor::Down => {
-                self.cursor.ln = min(self.cursor.ln.saturating_add(1), self.text_lines.len());
+                self.cursor.ln = min(self.cursor.ln.saturating_add(1), self.text_lines.len() - 1);
                 self.cursor.x = min(self.cursor.x, self.text_lines[self.cursor.ln].len());
             }
             Cursor::Left => self.cursor.x = self.cursor.x.saturating_sub(1),
             Cursor::Right => {
                 let ln = &mut self.text_lines[self.cursor.ln];
-                self.cursor.x = min(self.cursor.x.saturating_add(1), ln.len());
+                match cursor_ch {
+                    Some('\n') | None => {}
+                    Some(_) => {
+                        self.cursor.x = min(self.cursor.x.saturating_add(1), ln.len());
+                    }
+                }
             }
         }
     }
@@ -47,21 +53,42 @@ impl EditorState {
             .and_then(|ln| ln.chars().nth(coord.x))
     }
 
-    fn flat_offset(&self, offset: isize, mut coord: TextCoord) -> Option<TextCoord> {
-        if offset < 0 {
-            let mut left_offset = offset.unsigned_abs();
-            loop {
-                coord.x = coord.x.saturating_sub(left_offset);
-                left_offset = left_offset.saturating_sub(coord.x);
-                if left_offset == 0 {
-                    return Some(coord);
-                }
-                coord.ln.checked_sub(1)?;
-                coord.x = self.text_lines[coord.ln].len() - 1;
-            }
+    pub fn offset(&mut self, offset: isize) -> Option<TextCoord> {
+        let left_offset = offset.unsigned_abs();
+        let new_coord = if offset < 0 {
+            self.offset_neg(left_offset, self.cursor.clone())?
         } else {
+            self.offset_pos(left_offset, self.cursor.clone())?
+        };
+        self.cursor = new_coord;
+        Some(self.cursor.clone())
+    }
+
+    fn offset_pos(&self, mut offset: usize, mut coord: TextCoord) -> Option<TextCoord> {
+        loop {
+            let ln_len = self.text_lines[coord.ln].len();
+            let cutoff = min(coord.x.saturating_add(offset), ln_len);
+            offset = offset.saturating_sub(cutoff - coord.x);
+            coord.x = cutoff;
+            if offset == 0 {
+                return Some(coord);
+            }
+            coord.ln = coord.ln.checked_add(1)?;
+            coord.x = 0;
         }
-        todo!();
+    }
+
+    fn offset_neg(&self, mut offset: usize, mut coord: TextCoord) -> Option<TextCoord> {
+        loop {
+            let cutoff = coord.x.saturating_sub(offset);
+            offset = offset.saturating_sub(coord.x - cutoff);
+            coord.x = cutoff;
+            if offset == 0 {
+                return Some(coord);
+            }
+            coord.ln = coord.ln.checked_sub(1)?;
+            coord.x = self.text_lines[coord.ln].len();
+        }
     }
 
     pub fn set_cursor_ln_start(&mut self) {
@@ -86,24 +113,27 @@ impl EditorState {
     }
 
     pub fn delete_ch(&mut self) {
-        let ln = &mut self.text_lines[self.cursor.ln];
-        if ln.len() != 0 {
-            ln.remove(self.cursor.x);
-        } else {
-            if self.text_lines.len() == 1 {
-                return;
+        let c = self.cursor_ch();
+        // error-prone... order matters
+        let mut text_lines = std::mem::take(&mut self.text_lines);
+        match c {
+            Some('\n') => {
+                // assumes presence of newline guarantees this line isn't the last
+                let ln_below = text_lines.remove(self.cursor.ln + 1);
+                text_lines[self.cursor.ln].replace_range(self.cursor.x.., &ln_below);
             }
-            self.text_lines.remove(self.cursor.ln);
-            if (0..self.text_lines[self.cursor.ln].len())
-                .contains(&self.cursor.ln)
-                .not()
-            {}
-        }
+            Some(_) => {
+                text_lines[self.cursor.ln].remove(self.cursor.x);
+            }
+            None => {}
+        };
+        self.text_lines = text_lines;
     }
 
     pub fn cursor_ch(&self) -> Option<char> {
-        let ln = &self.text_lines[self.cursor.ln];
-        ln.chars().nth(self.cursor.x)
+        let ln = self.text_lines.get(self.cursor.ln)?;
+        let c = ln.chars().nth(self.cursor.x);
+        c
     }
 
     pub fn insert_ln(&mut self) {

@@ -1,10 +1,5 @@
+use crate::line_processor::LineProcessor;
 use std::collections::HashMap;
-
-use crate::{
-    highlight::{Highlighter, NoHighlight},
-    line_processor::LineProcessor,
-    utils::reflow::{LineComposer, WordWrapper},
-};
 use tui::text::StyledGrapheme;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -42,7 +37,6 @@ impl LineStylizer {
         let mut inline_offset = 0;
         let mut key_offset = 0;
         let mut transformed_line: Vec<StyledGrapheme> = vec![];
-        Self::set_line_prefix(&mut transformed_line);
 
         for gphm in graphemes.into_iter() {
             let remapped_key = Self::remap_symbol(inline_offset, gphm.clone());
@@ -53,20 +47,22 @@ impl LineStylizer {
             inline_offset += size;
         }
 
-        transformed_line
+        Self::prefix_line(transformed_line)
     }
 
-    fn set_line_prefix(ln: &mut Vec<StyledGrapheme>) {
-        ln.extend(vec![
+    fn prefix_line(ln: Vec<StyledGrapheme>) -> Vec<StyledGrapheme> {
+        let mut prefixed = vec![
             StyledGrapheme {
-                symbol: "~",
+                symbol: "⬦",
                 style: Default::default(),
             },
             StyledGrapheme {
                 symbol: " ",
                 style: Default::default(),
             },
-        ]);
+        ];
+        prefixed.extend(ln);
+        prefixed
     }
 
     fn tokens_to_graphemes<'tkn>(
