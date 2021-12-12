@@ -53,7 +53,7 @@ impl LineStylizer {
     fn prefix_line(ln: Vec<StyledGrapheme>) -> Vec<StyledGrapheme> {
         let mut prefixed = vec![
             StyledGrapheme {
-                symbol: "⬦",
+                symbol: "~",
                 style: Default::default(),
             },
             StyledGrapheme {

@@ -28,11 +28,11 @@ impl EditorState {
         match cmd {
             Cursor::Up => {
                 self.cursor.ln = self.cursor.ln.saturating_sub(1);
-                self.cursor.x = min(self.cursor.x, self.text_lines[self.cursor.ln].len());
+                self.cursor.x = min(self.cursor.x, self.text_lines[self.cursor.ln].len() - 1);
             }
             Cursor::Down => {
                 self.cursor.ln = min(self.cursor.ln.saturating_add(1), self.text_lines.len() - 1);
-                self.cursor.x = min(self.cursor.x, self.text_lines[self.cursor.ln].len());
+                self.cursor.x = min(self.cursor.x, self.text_lines[self.cursor.ln].len() - 1);
             }
             Cursor::Left => self.cursor.x = self.cursor.x.saturating_sub(1),
             Cursor::Right => {
@@ -73,7 +73,11 @@ impl EditorState {
             if offset == 0 {
                 return Some(coord);
             }
-            coord.ln = coord.ln.checked_add(1)?;
+            let next_ln = coord.ln.checked_add(1)?;
+            if next_ln >= self.text_lines.len() {
+                return None;
+            }
+            coord.ln = next_ln;
             coord.x = 0;
         }
     }
@@ -140,9 +144,8 @@ impl EditorState {
         let ln = &mut self.text_lines[self.cursor.ln];
         let x = self.cursor.x;
         let carry = ln[x..].to_string();
-        ln.replace_range(x.., "\n");
+        ln.replace_range(x.., "");
         self.text_lines.insert(self.cursor.ln + 1, carry);
-        self.set_cursor_x_start();
     }
 
     pub fn get_cursor(&self) -> TextCoord {

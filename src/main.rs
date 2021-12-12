@@ -143,8 +143,12 @@ fn run_app<B: Backend>(
                 match key.code {
                     KeyCode::Esc => return Ok(()),
                     KeyCode::Enter => {
+                        // editor.insert_ln();
+                        // editor.move_cursor(Cursor::Down);
+                        editor.insert_ch('\n');
+                        editor.offset(1);
                         editor.insert_ln();
-                        editor.move_cursor(Cursor::Down);
+                        editor.offset(1);
                     }
                     KeyCode::Tab => {
                         editor.insert_ch('\t');
