@@ -147,8 +147,6 @@ fn run_app<B: Backend>(
                         // editor.move_cursor(Cursor::Down);
                         editor.insert_ch('\n');
                         editor.offset(1);
-                        editor.insert_ln();
-                        editor.offset(1);
                     }
                     KeyCode::Tab => {
                         editor.insert_ch('\t');
