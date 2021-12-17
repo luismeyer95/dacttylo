@@ -1,21 +1,21 @@
-// #![allow(dead_code, unused)]
+#![allow(dead_code, unused)]
 mod game_state;
 mod highlight;
 mod network;
 // mod typeview;
 mod editor_state;
-mod editorview;
+mod editor_view;
 mod highlighter;
 mod line_processor;
 mod line_stylizer;
 mod text_coord;
-mod textview;
+mod text_view;
 mod utils;
 
-use clap::{load_yaml, ArgMatches};
+use clap::ArgMatches;
 use clap::{AppSettings, Arg, Parser};
 use editor_state::{Cursor, EditorState};
-use editorview::EditorRenderer;
+use editor_view::EditorRenderer;
 use network::message;
 
 use crossterm::{
@@ -46,9 +46,9 @@ use tui::{
 };
 
 // use crate::typeview::TypeView;
-use crate::editorview::EditorViewState;
-use crate::textview::Anchor;
-use crate::textview::TextView;
+use crate::editor_view::EditorViewState;
+use crate::text_view::Anchor;
+use crate::text_view::TextView;
 
 fn parse_opts() -> &'static ArgMatches {
     static OPTS: OnceCell<ArgMatches> = OnceCell::new();
@@ -56,7 +56,7 @@ fn parse_opts() -> &'static ArgMatches {
         clap::App::new("typebox")
             .arg(
                 Arg::new("file")
-                    .about("the input file to use")
+                    // .about("the input file to use")
                     .index(1)
                     .required(true)
                     .validator(is_valid_file),
@@ -124,7 +124,7 @@ fn run_app<B: Backend>(
     let filename = parse_opts().value_of("file").unwrap();
     let text_content = file_to_string(filename)?;
 
-    let mut editor = EditorState::new();
+    let mut editor = EditorState::new().content(&text_content);
     let mut editor_view = EditorViewState::new();
 
     loop {
@@ -177,45 +177,45 @@ fn run_app<B: Backend>(
     }
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, index: usize) -> Result<(), Box<dyn Error>> {
-    let filename = parse_opts().value_of("file").unwrap();
-    let text_content = file_to_string(filename)?;
-    // let text_content = "\t\t\nhello";
+// fn ui<B: Backend>(f: &mut Frame<B>, index: usize) -> Result<(), Box<dyn Error>> {
+//     let filename = parse_opts().value_of("file").unwrap();
+//     let text_content = file_to_string(filename)?;
+//     // let text_content = "\t\t\nhello";
 
-    let size = f.size();
-    let block = Block::default().style(Style::default().bg(Color::Black).fg(Color::White));
-    f.render_widget(block, size);
+//     let size = f.size();
+//     let block = Block::default().style(Style::default().bg(Color::Black).fg(Color::White));
+//     f.render_widget(block, size);
 
-    // let chunks = Layout::default()
-    //     .direction(Direction::Vertical)
-    //     .margin(5)
-    //     .constraints([Constraint::Percentage(100)].as_ref())
-    //     .split(size);
+// let chunks = Layout::default()
+//     .direction(Direction::Vertical)
+//     .margin(5)
+//     .constraints([Constraint::Percentage(100)].as_ref())
+//     .split(size);
 
-    let cell = Cell::new(0);
-    let lines: Vec<&str> = text_content.split_inclusive('\n').collect();
+// let cell = Cell::new(0);
+// let lines: Vec<&str> = text_content.split_inclusive('\n').collect();
 
-    // let typeview = TextView::new()
-    //     .content(lines.clone())
-    //     .anchor(Anchor::Start(index))
-    //     .on_wrap(Box::new(|displayed_range| {
-    //         cell.set(cell.get() + 1);
-    //     }))
-    //     .block(
-    //         Block::default()
-    //             .borders(Borders::ALL)
-    //             .border_type(BorderType::Thick)
-    //             .style(Style::default()),
-    //     )
-    //     .bg_color(Color::Rgb(0, 27, 46))
-    //     .sparse_styling(HashMap::<TextCoord, Style>::from_iter(vec![(
-    //         TextCoord(index, 0),
-    //         Style::default().bg(Color::White).fg(Color::Black),
-    //     )]));
-    // f.render_widget(typeview, size);
+// let typeview = TextView::new()
+//     .content(lines.clone())
+//     .anchor(Anchor::Start(index))
+//     .on_wrap(Box::new(|displayed_range| {
+//         cell.set(cell.get() + 1);
+//     }))
+//     .block(
+//         Block::default()
+//             .borders(Borders::ALL)
+//             .border_type(BorderType::Thick)
+//             .style(Style::default()),
+//     )
+//     .bg_color(Color::Rgb(0, 27, 46))
+//     .sparse_styling(HashMap::<TextCoord, Style>::from_iter(vec![(
+//         TextCoord(index, 0),
+//         Style::default().bg(Color::White).fg(Color::Black),
+//     )]));
+// f.render_widget(typeview, size);
 
-    // let mut typeview = EditorView::new(text_content.split_inclusive('\n').collect());
-    // f.render_stateful_widget(&typeview.renderer(), size, &mut typeview);
+// let mut typeview = EditorView::new(text_content.split_inclusive('\n').collect());
+// f.render_stateful_widget(&typeview.renderer(), size, &mut typeview);
 
-    Ok(())
-}
+//     Ok(())
+// }

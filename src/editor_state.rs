@@ -1,7 +1,6 @@
-use tui::text::Text;
-
 use crate::text_coord::TextCoord;
 use std::{cmp::min, ops::Not};
+use tui::text::Text;
 
 pub enum Cursor {
     Up,
@@ -21,6 +20,18 @@ impl EditorState {
             text_lines: vec!["".into()],
             cursor: TextCoord::new(0, 0),
         }
+    }
+
+    pub fn content(mut self, text: &str) -> Self {
+        let mut lines = text
+            .split_inclusive("\n")
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>();
+        if lines.len() == 0 {
+            lines.push("".into());
+        }
+        self.text_lines = lines;
+        self
     }
 
     pub fn move_cursor(&mut self, cmd: Cursor) {
@@ -75,22 +86,6 @@ impl EditorState {
         Some(self.cursor.clone())
     }
 
-    // fn offset_pos(&self, mut offset: usize, mut coord: TextCoord) -> Option<TextCoord> {
-    //     let mut ln = self.text_lines.get(coord.ln)?;
-    //     while offset >= ln.len() - coord.x {
-    //         // handling special case for the eol cursor of the last line
-    //         if offset == 1 && self.text_lines.get(coord.ln + 1) == None {
-    //             break;
-    //         }
-    //         offset -= ln.len() - coord.x;
-    //         ln = self.text_lines.get(coord.ln + 1)?;
-    //         coord.ln += 1;
-    //         coord.x = 0;
-    //     }
-    //     coord.x += offset;
-    //     Some(coord)
-    // }
-
     fn offset_pos(&self, mut offset: usize, mut coord: TextCoord) -> Option<TextCoord> {
         let mut ln = self.text_lines.get(coord.ln)?;
         let mut next_ln = self.text_lines.get(coord.ln + 1);
@@ -122,22 +117,6 @@ impl EditorState {
         Some(coord)
     }
 
-    pub fn set_cursor_ln_start(&mut self) {
-        self.cursor.ln = 0;
-    }
-
-    pub fn set_cursor_ln_end(&mut self) {
-        self.cursor.ln = self.text_lines.len();
-    }
-
-    pub fn set_cursor_x_start(&mut self) {
-        self.cursor.x = 0;
-    }
-
-    pub fn set_cursor_x_end(&mut self) {
-        self.cursor.x = self.text_lines[self.cursor.ln].len();
-    }
-
     pub fn insert_ch(&mut self, c: char) {
         let ln = &mut self.text_lines[self.cursor.ln];
         match c {
@@ -145,11 +124,9 @@ impl EditorState {
                 let x = self.cursor.x;
                 let carry = ln[x..].to_string();
                 ln.replace_range(x.., "\n");
-                self.text_lines.insert(self.cursor.ln + 1, carry);
+                self.text_lines.insert(self.cursor.ln + 1, carry)
             }
-            _ => {
-                ln.insert(self.cursor.x, c);
-            }
+            _ => ln.insert(self.cursor.x, c),
         }
     }
 
@@ -172,10 +149,6 @@ impl EditorState {
         let ln = self.text_lines.get(self.cursor.ln)?;
         ln.chars().nth(self.cursor.x)
     }
-
-    // pub fn insert_ln(&mut self) {
-
-    // }
 
     pub fn get_cursor(&self) -> TextCoord {
         let ln = &self.text_lines[self.cursor.ln];

@@ -1,6 +1,8 @@
+use crate::highlight::Highlighter;
 use crate::{
+    highlight::SyntectHighlight,
     text_coord::TextCoord,
-    textview::{Anchor, TextView},
+    text_view::{Anchor, TextView},
 };
 use std::{cell::Cell, collections::HashMap, ops::Range};
 use tui::{
@@ -51,9 +53,21 @@ impl<'a> EditorRenderer<'a> {
     }
 
     pub fn content(mut self, lines: Vec<&'a str>) -> Self {
+        // self.text_lines = lines
+        //     .into_iter()
+        //     .map(|s| vec![(s, tui::style::Style::default())])
+        //     .collect();
+        // self
+
+        let mut hl = SyntectHighlight::new();
         self.text_lines = lines
             .into_iter()
-            .map(|s| vec![(s, tui::style::Style::default())])
+            .map(|s| {
+                hl.highlight_line(s)
+                    .into_iter()
+                    .map(|(tkn, color)| (tkn, tui::style::Style::default().fg(color)))
+                    .collect()
+            })
             .collect();
         self
     }
@@ -89,6 +103,9 @@ impl<'a> StatefulWidget for EditorRenderer<'a> {
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let anchor = Self::compute_anchor(state);
 
+        let eggshell = Color::Rgb(255, 239, 214);
+        let darkblue = Color::Rgb(0, 27, 46);
+
         let view = TextView::new()
             .styled_content(self.text_lines)
             .anchor(anchor)
@@ -99,7 +116,7 @@ impl<'a> StatefulWidget for EditorRenderer<'a> {
                     lines_rendered,
                 });
             }))
-            .bg_color(Color::Rgb(0, 27, 46))
+            .bg_color(darkblue)
             .sparse_styling(HashMap::<TextCoord, tui::style::Style>::from_iter(vec![(
                 TextCoord::new(state.focus_coord.ln, state.focus_coord.x),
                 tui::style::Style::default()

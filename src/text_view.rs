@@ -122,28 +122,61 @@ impl<'a> TextView<'a> {
         *area = inner_area;
     }
 
-    fn process_view(&mut self, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
+    fn generate_view(&mut self, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
         match self.anchor {
-            Anchor::Start(anchor) => self.process_anchor_start(anchor, area),
-            Anchor::End(anchor) => self.process_anchor_end(anchor, area),
+            Anchor::Start(anchor) => self.generate_start_anchor(anchor, area),
+            Anchor::End(anchor) => self.generate_end_anchor(anchor, area),
         }
     }
 
-    fn process_anchor_start(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let lines = std::mem::take(&mut self.text_lines);
+    fn generate_rows_down<'txt>(
+        &mut self,
+        current_ln: &mut usize,
+        lines: &[Vec<(&'txt str, tui::style::Style)>],
+        area: &Rect,
+    ) -> Vec<Vec<StyledGrapheme<'txt>>> {
         let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
-        let mut current_ln = anchor;
 
-        while current_ln < lines.len() {
-            let line_as_rows = self.line_to_rows(current_ln, &lines[current_ln], &area);
+        while *current_ln < lines.len() {
+            let line_as_rows = self.line_to_rows(*current_ln, &lines[*current_ln], &area);
             if line_as_rows.len() + rows.len() > area.height as usize {
                 break;
             }
             rows.extend(line_as_rows);
-            current_ln += 1;
+            *current_ln += 1;
         }
 
-        // passing the actually displayed line range
+        rows
+    }
+
+    fn generate_rows_up<'txt>(
+        &mut self,
+        current_ln: &mut usize,
+        lines: &[Vec<(&'txt str, tui::style::Style)>],
+        area: &Rect,
+    ) -> Vec<Vec<StyledGrapheme<'txt>>> {
+        let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
+
+        *current_ln = loop {
+            let mut line_as_rows = self.line_to_rows(*current_ln, &lines[*current_ln], &area);
+            if line_as_rows.len() + rows.len() > area.height as usize {
+                break *current_ln + 1;
+            }
+            line_as_rows.extend(rows);
+            rows = line_as_rows;
+            match current_ln.checked_sub(1) {
+                Some(next) => *current_ln = next,
+                None => break 0,
+            }
+        };
+
+        rows
+    }
+
+    fn generate_start_anchor(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
+        let lines = std::mem::take(&mut self.text_lines);
+        let mut current_ln = anchor;
+        let mut rows = self.generate_rows_down(&mut current_ln, &lines, &area);
         if let Some(metadata_handler) = &mut self.metadata_handler {
             metadata_handler(anchor..current_ln);
         }
@@ -170,36 +203,14 @@ impl<'a> TextView<'a> {
         self.line_processor.process_line(line, styling, area.width)
     }
 
-    fn process_anchor_end(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
+    fn generate_end_anchor(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
         let lines = std::mem::take(&mut self.text_lines);
-        let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
-        let mut current_ln = anchor - 1;
+        let mut start_ln = anchor - 1;
+        let mut end_ln = anchor;
 
-        let start_ln = loop {
-            let mut line_as_rows = self.line_to_rows(current_ln, &lines[current_ln], &area);
-            if line_as_rows.len() + rows.len() > area.height as usize {
-                break current_ln + 1;
-            }
-
-            line_as_rows.extend(rows);
-            rows = line_as_rows;
-            match current_ln.checked_sub(1) {
-                Some(next) => current_ln = next,
-                None => break 0,
-            }
-        };
-
-        current_ln = anchor;
-        while current_ln < lines.len() {
-            let line_as_rows = self.line_to_rows(current_ln, &lines[current_ln], &area);
-            if line_as_rows.len() + rows.len() > area.height as usize {
-                break;
-            }
-            rows.extend(line_as_rows);
-            current_ln += 1;
-        }
-
-        let end_ln = current_ln;
+        let mut rows = self.generate_rows_up(&mut start_ln, &lines, &area);
+        let mut bottom_rows = self.generate_rows_down(&mut end_ln, &lines, &area);
+        rows.extend(bottom_rows);
 
         // passing the actually displayed line range
         if let Some(metadata_handler) = &mut self.metadata_handler {
@@ -225,7 +236,7 @@ impl<'a> Widget for TextView<'a> {
             }
         }
 
-        let lines = self.process_view(area);
+        let lines = self.generate_view(area);
         let mut y = 0;
         for line in lines {
             let mut x = 0;
