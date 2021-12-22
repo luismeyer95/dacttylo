@@ -177,10 +177,10 @@ impl<'a> TextView<'a> {
         let lines = std::mem::take(&mut self.text_lines);
         let mut current_ln = anchor;
         let mut rows = self.generate_rows_down(&mut current_ln, &lines, &area);
+
         if let Some(metadata_handler) = &mut self.metadata_handler {
             metadata_handler(anchor..current_ln);
         }
-
         rows
     }
 
