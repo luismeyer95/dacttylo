@@ -44,7 +44,7 @@ impl SyntectHighlight {
             "InspiredGitHub",
         ];
 
-        let highlighter = HighlightLines::new(syntax, &theme_set.themes[themes[0]]);
+        let highlighter = HighlightLines::new(syntax, &theme_set.themes[themes[2]]);
 
         SyntectHighlight {
             syntax_set,

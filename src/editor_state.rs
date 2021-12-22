@@ -1,7 +1,6 @@
-use tui::text::Text;
-
 use crate::text_coord::TextCoord;
 use std::{cmp::min, ops::Not};
+use tui::text::Text;
 
 pub enum Cursor {
     Up,
@@ -21,6 +20,18 @@ impl EditorState {
             text_lines: vec!["".into()],
             cursor: TextCoord::new(0, 0),
         }
+    }
+
+    pub fn content(mut self, text: &str) -> Self {
+        let mut lines = text
+            .split_inclusive("\n")
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>();
+        if lines.len() == 0 {
+            lines.push("".into());
+        }
+        self.text_lines = lines;
+        self
     }
 
     pub fn move_cursor(&mut self, cmd: Cursor) {
@@ -114,11 +125,9 @@ impl EditorState {
                 let x = self.cursor.x;
                 let carry = ln[x..].to_string();
                 ln.replace_range(x.., "\n");
-                self.text_lines.insert(self.cursor.ln + 1, carry);
+                self.text_lines.insert(self.cursor.ln + 1, carry)
             }
-            _ => {
-                ln.insert(self.cursor.x, c);
-            }
+            _ => ln.insert(self.cursor.x, c),
         }
     }
 
