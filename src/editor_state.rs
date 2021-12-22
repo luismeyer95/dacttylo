@@ -75,26 +75,11 @@ impl EditorState {
         Some(self.cursor.clone())
     }
 
-    // fn offset_pos(&self, mut offset: usize, mut coord: TextCoord) -> Option<TextCoord> {
-    //     let mut ln = self.text_lines.get(coord.ln)?;
-    //     while offset >= ln.len() - coord.x {
-    //         // handling special case for the eol cursor of the last line
-    //         if offset == 1 && self.text_lines.get(coord.ln + 1) == None {
-    //             break;
-    //         }
-    //         offset -= ln.len() - coord.x;
-    //         ln = self.text_lines.get(coord.ln + 1)?;
-    //         coord.ln += 1;
-    //         coord.x = 0;
-    //     }
-    //     coord.x += offset;
-    //     Some(coord)
-    // }
-
     fn offset_pos(&self, mut offset: usize, mut coord: TextCoord) -> Option<TextCoord> {
         let mut ln = self.text_lines.get(coord.ln)?;
         let mut next_ln = self.text_lines.get(coord.ln + 1);
         while offset >= ln.len() - coord.x {
+            // handling the special case for the last line end-of-line cursor
             if next_ln == None && offset == ln.len() - coord.x {
                 break;
             }
@@ -120,22 +105,6 @@ impl EditorState {
         }
         coord.x -= offset;
         Some(coord)
-    }
-
-    pub fn set_cursor_ln_start(&mut self) {
-        self.cursor.ln = 0;
-    }
-
-    pub fn set_cursor_ln_end(&mut self) {
-        self.cursor.ln = self.text_lines.len();
-    }
-
-    pub fn set_cursor_x_start(&mut self) {
-        self.cursor.x = 0;
-    }
-
-    pub fn set_cursor_x_end(&mut self) {
-        self.cursor.x = self.text_lines[self.cursor.ln].len();
     }
 
     pub fn insert_ch(&mut self, c: char) {
@@ -173,12 +142,7 @@ impl EditorState {
         ln.chars().nth(self.cursor.x)
     }
 
-    // pub fn insert_ln(&mut self) {
-
-    // }
-
     pub fn get_cursor(&self) -> TextCoord {
-        let ln = &self.text_lines[self.cursor.ln];
         TextCoord::new(self.cursor.ln, self.cursor.x)
     }
 

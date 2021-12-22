@@ -8,7 +8,10 @@ use tui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::line_stylizer::LineStylizer;
+use crate::{
+    highlight::{Highlighter, SyntectHighlight},
+    line_stylizer::LineStylizer,
+};
 use crate::{line_processor::LineProcessor, text_coord::TextCoord};
 
 type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;

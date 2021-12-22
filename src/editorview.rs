@@ -1,4 +1,5 @@
 use crate::{
+    highlight::{Highlighter, SyntectHighlight},
     text_coord::TextCoord,
     textview::{Anchor, TextView},
 };
@@ -51,11 +52,24 @@ impl<'a> EditorRenderer<'a> {
     }
 
     pub fn content(mut self, lines: Vec<&'a str>) -> Self {
+        // to remove!
+        let mut hl = SyntectHighlight::new();
         self.text_lines = lines
             .into_iter()
-            .map(|s| vec![(s, tui::style::Style::default())])
+            .map(|s| {
+                hl.highlight_line(s)
+                    .into_iter()
+                    .map(|tkn| (tkn.0, tui::style::Style::default().fg(tkn.1)))
+                    .collect()
+            })
             .collect();
         self
+
+        // self.text_lines = lines
+        //     .into_iter()
+        //     .map(|s| vec![(s, tui::style::Style::default())])
+        //     .collect();
+        // self
     }
 
     pub fn styled_content(mut self, lines: Vec<StyledLine<'a>>) -> Self {
