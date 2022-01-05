@@ -1,69 +1,30 @@
-#![allow(dead_code, unused)]
-mod highlight;
-mod network;
-// mod typeview;
-mod editor_state;
-mod editor_view;
-mod highlighter;
-mod line_processor;
-mod line_stylizer;
-mod text_coord;
-mod text_view;
-mod utils;
+// #![allow(dead_code, unused)]
 
-use clap::ArgMatches;
-use clap::{AppSettings, Arg, Parser};
-use editor_state::{Cursor, EditorState};
-use editor_view::EditorRenderer;
-use network::message;
+use dacttylo::{
+    editor_state::{Cursor, EditorState},
+    editor_view::{EditorRenderer, EditorViewState},
+};
 
+#[allow(unused_imports)]
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute, queue,
+    execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use once_cell::sync::OnceCell;
-use std::cell::Cell;
-use std::collections::HashMap;
-use std::path::Path;
+
 use std::{
-    borrow::Cow,
     error::Error,
     io,
-    path::Prefix,
     time::{Duration, Instant},
 };
-use tui::text::{self, Text};
-use tui::widgets::BorderType;
 use tui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Alignment, Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    text::{Span, Spans},
-    widgets::{Block, Borders, Paragraph, Wrap},
-    Frame, Terminal,
+    Terminal,
 };
 
-use crate::editor_view::EditorViewState;
-use crate::text_view::Anchor;
-use crate::text_view::TextView;
-
-fn is_valid_file(val: &str) -> Result<(), String> {
-    if Path::new(val).exists() {
-        Ok(())
-    } else {
-        Err(format!("file `{}` does not exist.", val))
-    }
-}
-
 fn main() -> Result<(), Box<dyn Error>> {
-    // parse_opts();
-    typebox_app()?;
-
-    Ok(())
+    Ok(typebox_app()?)
 }
-
-//////////////////////////////////////////////////////////////////////
 
 fn typebox_app() -> Result<(), Box<dyn Error>> {
     // setup terminal
@@ -94,7 +55,6 @@ fn run_app<B: Backend>(
     tick_rate: Duration,
 ) -> Result<(), Box<dyn Error>> {
     let mut last_tick = Instant::now();
-    let mut index: usize = 0;
 
     let arg = std::env::args().nth(1).ok_or("No file provided")?;
     let text_content = std::fs::read_to_string(&arg)?;
@@ -103,9 +63,9 @@ fn run_app<B: Backend>(
     let mut editor_view = EditorViewState::new();
 
     loop {
-        // terminal.draw(|f| ui(f, index).unwrap())?;
-        let mut renderer = EditorRenderer::new().content(editor.get_lines());
+        let renderer = EditorRenderer::new().content(editor.get_lines());
         editor_view.focus(editor.get_cursor());
+
         terminal.draw(|f| {
             f.render_stateful_widget(renderer, f.size(), &mut editor_view);
         })?;

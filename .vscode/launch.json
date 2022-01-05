@@ -7,11 +7,11 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'ttypebox'",
+            "name": "Debug executable 'dacttylo'",
             "cargo": {
-                "args": ["build", "--bin=ttypebox", "--package=ttypebox"],
+                "args": ["build", "--bin=dacttylo", "--package=dacttylo"],
                 "filter": {
-                    "name": "ttypebox",
+                    "name": "dacttylo",
                     "kind": "bin"
                 }
             },
@@ -23,16 +23,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'ttypebox'",
+            "name": "Debug unit tests in executable 'dacttylo'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=ttypebox",
-                    "--package=ttypebox"
+                    "--bin=dacttylo",
+                    "--package=dacttylo"
                 ],
                 "filter": {
-                    "name": "ttypebox",
+                    "name": "dacttylo",
                     "kind": "bin"
                 }
             },
