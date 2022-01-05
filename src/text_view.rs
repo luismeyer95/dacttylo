@@ -107,9 +107,8 @@ impl<'a> TextView<'a> {
     }
 
     /// Pass a callback to this function to set external UI state.
-    /// The callback is passed
-    /// - a vector of line heights (acts as a map from line number to row count)
-    /// - the height of the text view render buffer
+    /// The callback is passed the range of lines that were rendered in the
+    /// processed frame
     pub fn on_wrap(mut self, callback: Box<dyn FnMut(Range<usize>) + 'a>) -> Self {
         self.metadata_handler = Some(callback);
         self

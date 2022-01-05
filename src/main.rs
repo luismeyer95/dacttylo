@@ -1,10 +1,10 @@
 #![allow(dead_code, unused)]
-mod game_state;
 mod highlight;
 mod network;
 // mod typeview;
 mod editor_state;
 mod editor_view;
+mod event_aggregator;
 mod highlighter;
 mod line_processor;
 mod line_stylizer;
@@ -56,7 +56,6 @@ fn parse_opts() -> &'static ArgMatches {
         clap::App::new("typebox")
             .arg(
                 Arg::new("file")
-                    // .about("the input file to use")
                     .index(1)
                     .required(true)
                     .validator(is_valid_file),

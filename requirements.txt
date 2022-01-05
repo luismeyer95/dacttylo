@@ -21,3 +21,22 @@ High level requirements:
             -> save metadata about the render (displayed lines)
     -> dynamic syntax highlighting
     -> scrolling/resizing handled properly
+
+Networking:
+    -> initiate typing race, either by hosting or joining a session
+    -> a session would be identified by a handle/id provided on the command line
+        -> joining a session
+            -> user should provide his username along with a session id with the option 'join'
+            -> connect to the session channel, notify the user's presence
+            -> when host decides to start the session, context data is sent and session starts
+            -> send/recv application specific payloads
+        -> hosting a session
+            -> user should provide his username along with a session id with the option 'host'
+            -> checks are made to ensure the session is not already hosted
+            -> listen for join notifications, send context data for each one
+            -> session starts when host decides (ex: listen for enter key on stdin)
+        -> each user should be made aware of every other user after joining and before the session starts
+            -> host broadcasts the list of all users up to now after each join?
+            -> every present user notifies the joining user?
+        
+
