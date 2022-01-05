@@ -1,3 +1,4 @@
+use crate::{line_processor::LineProcessor, line_stylizer::LineStylizer, text_coord::TextCoord};
 use std::collections::HashMap;
 use std::ops::Range;
 use tui::{
@@ -8,12 +9,6 @@ use tui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::{
-    highlight::{Highlighter, SyntectHighlight},
-    line_stylizer::LineStylizer,
-};
-use crate::{line_processor::LineProcessor, text_coord::TextCoord};
-
 type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;
 
 pub enum Anchor {
@@ -21,16 +16,19 @@ pub enum Anchor {
     End(usize),
 }
 
+/// Lower level, stateless text displaying engine.
 pub struct TextView<'a> {
     /// The full text buffer
     text_lines: Vec<StyledLine<'a>>,
 
-    /// Controls the view offset behaviour
+    /// Controls the line offset behaviour for the final display
     anchor: Anchor,
 
+    /// Responsible for transforming a line to a collection of rows
+    /// given a terminal width size
     line_processor: Box<dyn LineProcessor>,
 
-    /// Sparse styling applied after the syntax highlight pass,
+    /// Styling applied after the syntax highlight pass,
     /// used for cursors and special application logic highlighting
     sparse_styling: HashMap<TextCoord, tui::style::Style>,
 
@@ -85,11 +83,13 @@ impl<'a> TextView<'a> {
     pub fn anchor(mut self, anchor: Anchor) -> Self {
         match &anchor {
             Anchor::Start(anchor) if *anchor >= self.text_lines.len() => {
-                panic!("anchor out of bounds")
+                panic!("Anchor out of bounds")
             }
+
             Anchor::End(anchor) if *anchor > self.text_lines.len() => {
-                panic!("anchor out of bounds")
+                panic!("Anchor out of bounds")
             }
+
             _ => {}
         }
         self.anchor = anchor;
@@ -106,9 +106,6 @@ impl<'a> TextView<'a> {
         self
     }
 
-    /// Pass a callback to this function to set external UI state.
-    /// The callback is passed the range of lines that were rendered in the
-    /// processed frame
     pub fn on_wrap(mut self, callback: Box<dyn FnMut(Range<usize>) + 'a>) -> Self {
         self.metadata_handler = Some(callback);
         self
@@ -178,11 +175,12 @@ impl<'a> TextView<'a> {
     fn generate_start_anchor(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
         let lines = std::mem::take(&mut self.text_lines);
         let mut current_ln = anchor;
-        let mut rows = self.generate_rows_down(&mut current_ln, &lines, &area);
+        let rows = self.generate_rows_down(&mut current_ln, &lines, &area);
 
         if let Some(metadata_handler) = &mut self.metadata_handler {
             metadata_handler(anchor..current_ln);
         }
+
         rows
     }
 
@@ -211,7 +209,7 @@ impl<'a> TextView<'a> {
         let mut end_ln = anchor;
 
         let mut rows = self.generate_rows_up(&mut start_ln, &lines, &area);
-        let mut bottom_rows = self.generate_rows_down(&mut end_ln, &lines, &area);
+        let bottom_rows = self.generate_rows_down(&mut end_ln, &lines, &area);
         rows.extend(bottom_rows);
 
         // passing the actually displayed line range

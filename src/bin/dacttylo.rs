@@ -1,4 +1,4 @@
-// #![allow(dead_code, unused)]
+#![allow(dead_code, unused)]
 
 use dacttylo::{
     editor_state::{Cursor, EditorState},
@@ -44,7 +44,7 @@ fn typebox_app() -> Result<(), Box<dyn Error>> {
     terminal.show_cursor()?;
 
     if let Err(err) = res {
-        println!("{:?}", err)
+        eprintln!("Error: {:?}", err)
     }
 
     Ok(())
