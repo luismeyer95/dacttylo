@@ -1,7 +1,6 @@
-use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use syntect::easy::HighlightLines;
-use syntect::{highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings};
+use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 /// Highlighter trait for applying global text styling before rendering a Typeview widget
 pub trait Highlighter {
@@ -13,7 +12,7 @@ pub trait Highlighter {
 pub struct NoHighlight;
 impl Highlighter for NoHighlight {
     fn highlight<'txt>(&mut self, lines: &[&'txt str]) -> Vec<Vec<(&'txt str, tui::style::Color)>> {
-        lines.into_iter().map(|&s| self.highlight_line(s)).collect()
+        lines.iter().map(|&s| self.highlight_line(s)).collect()
     }
 
     fn highlight_line<'txt>(&mut self, line: &'txt str) -> Vec<(&'txt str, tui::style::Color)> {
@@ -56,8 +55,8 @@ impl SyntectHighlight {
         static SYNTAX_SET: OnceCell<SyntaxSet> = OnceCell::new();
         static THEME_SET: OnceCell<ThemeSet> = OnceCell::new();
         (
-            SYNTAX_SET.get_or_init(|| SyntaxSet::load_defaults_newlines()),
-            THEME_SET.get_or_init(|| ThemeSet::load_defaults()),
+            SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines),
+            THEME_SET.get_or_init(ThemeSet::load_defaults),
         )
     }
 
@@ -101,12 +100,13 @@ impl Highlighter for SyntectHighlight {
     }
 
     fn highlight_line<'txt>(&mut self, line: &'txt str) -> Vec<(&'txt str, tui::style::Color)> {
-        let tokens = self.highlighter.highlight(&line, &self.syntax_set);
+        let tokens = self.highlighter.highlight(line, self.syntax_set);
         tokens
             .into_iter()
             .map(|(style, token)| {
                 (
                     token,
+                    // TODO: forgot about modifiers...
                     tui::style::Color::Rgb(
                         style.foreground.r,
                         style.foreground.g,

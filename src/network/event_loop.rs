@@ -82,7 +82,7 @@ impl EventLoop {
                 },
                 command = self.command_receiver.next() => match command {
                     Some(c) => self.handle_command(c).await,
-                    // Command channel closed, thus shutting down the network event loop.
+                    // Command channel closed, thus shutting down the network event loop
                     None=>  return,
                 },
             }
@@ -103,7 +103,7 @@ impl EventLoop {
 
             NetCommand::PutRecord { key, value, sender } => {
                 let record = Record {
-                    key: key.clone(),
+                    key,
                     value,
                     publisher: None,
                     expires: None,
@@ -152,6 +152,7 @@ impl EventLoop {
         }
     }
 
+    #[allow(clippy::single_match)]
     async fn handle_event(
         &mut self,
         event: SwarmEvent<ComposedEvent, impl Error + Send + Sync + 'static>,
@@ -174,6 +175,7 @@ impl EventLoop {
         }
     }
 
+    #[allow(clippy::single_match)]
     async fn handle_floodsub_event(&mut self, event: FloodsubEvent) {
         match event {
             FloodsubEvent::Message(FloodsubMessage {
@@ -219,6 +221,7 @@ impl EventLoop {
         }
     }
 
+    #[allow(clippy::single_match)]
     async fn handle_kademlia_event(&mut self, event: KademliaEvent) {
         match event {
             KademliaEvent::OutboundQueryCompleted { result, id, .. } => match result {

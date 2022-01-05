@@ -1,19 +1,8 @@
-#![allow(unused)]
+// #![allow(unused)]
 
 use chrono::{DateTime, Utc};
-use libp2p::{
-    core::upgrade,
-    identity,
-    kad::{record::Key, Quorum},
-    mplex, noise,
-    swarm::{SwarmBuilder, SwarmEvent},
-    tcp::TokioTcpConfig,
-    PeerId, Swarm, Transport,
-};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::error::Error;
-use std::time::Duration;
+use libp2p::{identity, PeerId};
+use std::{collections::HashMap, error::Error, time::Duration};
 
 use dacttylo::{
     self,
@@ -23,7 +12,7 @@ use dacttylo::{
     utils::time::*,
 };
 use tokio::io::{self, AsyncBufReadExt};
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::StreamExt;
 
 type AsyncResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -49,7 +38,7 @@ async fn handle_host(user: String, file: String) -> AsyncResult<()> {
 
     println!("Local peer id: {:?}", peer_id);
 
-    let (mut p2p_client, mut event_stream, task) = network::new(id_keys.clone()).await?;
+    let (p2p_client, mut event_stream, task) = network::new(id_keys.clone()).await?;
     let mut client = dacttylo::session::SessionClient::new(p2p_client);
 
     tokio::spawn(task.run());
@@ -177,7 +166,7 @@ async fn handle_join(user: String, host: String) -> AsyncResult<()> {
 
     println!("Local peer id: {:?}", peer_id);
 
-    let (mut p2p_client, mut event_stream, task) = network::new(id_keys).await?;
+    let (p2p_client, mut event_stream, task) = network::new(id_keys).await?;
     let mut client = dacttylo::session::SessionClient::new(p2p_client);
 
     tokio::spawn(task.run());

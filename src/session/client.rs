@@ -26,8 +26,7 @@ impl SessionClient {
 
     fn get_session(&self) -> Result<&str, &'static str> {
         self.current_session_id
-            .as_ref()
-            .map(|s| s.as_str())
+            .as_deref()
             .ok_or("Session not found")
     }
 
@@ -51,8 +50,7 @@ impl SessionClient {
     }
 
     pub async fn host_session(&mut self, host: &str, session_data: SessionData) -> AsyncResult<()> {
-        let s_id = session_data.session_id.clone();
-        self.join_session(s_id.into()).await?;
+        self.join_session(session_data.session_id.clone()).await?;
 
         let key = Key::new(&host);
         let value = bincode::serialize(&session_data)?;
@@ -114,10 +112,11 @@ impl SessionClient {
         let current_session_id = self.get_session()?;
         let payload = bincode::serialize(&session_cmd)?;
 
-        Ok(self
-            .p2p_client
+        self.p2p_client
             .publish(Topic::new(current_session_id), payload)
             .await
-            .expect("P2P client channel failure"))
+            .expect("P2P client channel failure");
+
+        Ok(())
     }
 }

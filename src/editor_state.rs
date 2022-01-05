@@ -1,6 +1,5 @@
 use crate::text_coord::TextCoord;
-use std::{cmp::min, ops::Not};
-use tui::text::Text;
+use std::cmp::min;
 
 pub enum Cursor {
     Up,
@@ -12,6 +11,12 @@ pub enum Cursor {
 pub struct EditorState {
     text_lines: Vec<String>,
     cursor: TextCoord,
+}
+
+impl Default for EditorState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EditorState {
@@ -27,7 +32,7 @@ impl EditorState {
             .split_inclusive("\n")
             .map(|s| s.to_string())
             .collect::<Vec<String>>();
-        if lines.len() == 0 {
+        if lines.is_empty() {
             lines.push("".into());
         }
         self.text_lines = lines;
@@ -35,7 +40,6 @@ impl EditorState {
     }
 
     pub fn move_cursor(&mut self, cmd: Cursor) {
-        let cursor_ch = self.cursor_ch();
         match cmd {
             Cursor::Up => {
                 self.cursor.ln = self.cursor.ln.saturating_sub(1);
@@ -61,6 +65,7 @@ impl EditorState {
         }
     }
 
+    #[allow(unused)]
     fn char_at(&self, coord: TextCoord) -> Option<char> {
         self.text_lines
             .get(coord.ln)
@@ -68,7 +73,7 @@ impl EditorState {
     }
 
     fn nl_stripped_len(s: &str) -> usize {
-        if s.ends_with("\n") {
+        if s.ends_with('\n') {
             s.len() - 1
         } else {
             s.len()

@@ -1,4 +1,4 @@
-#![allow(dead_code, unused)]
+#![allow(dead_code, unused, clippy::new_without_default)]
 
 use dacttylo::{
     editor_state::{Cursor, EditorState},
@@ -23,7 +23,7 @@ use tui::{
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
-    Ok(typebox_app()?)
+    typebox_app()
 }
 
 fn typebox_app() -> Result<(), Box<dyn Error>> {
@@ -92,7 +92,7 @@ fn run_app<B: Backend>(
                         editor.offset(1);
                     }
                     KeyCode::Backspace => {
-                        if let Some(_) = editor.offset(-1) {
+                        if editor.offset(-1).is_some() {
                             editor.delete_ch();
                         }
                     }

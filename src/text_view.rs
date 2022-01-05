@@ -137,7 +137,7 @@ impl<'a> TextView<'a> {
         let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
 
         while *current_ln < lines.len() {
-            let line_as_rows = self.line_to_rows(*current_ln, &lines[*current_ln], &area);
+            let line_as_rows = self.line_to_rows(*current_ln, &lines[*current_ln], area);
             if line_as_rows.len() + rows.len() > area.height as usize {
                 break;
             }
@@ -157,7 +157,7 @@ impl<'a> TextView<'a> {
         let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
 
         *current_ln = loop {
-            let mut line_as_rows = self.line_to_rows(*current_ln, &lines[*current_ln], &area);
+            let mut line_as_rows = self.line_to_rows(*current_ln, &lines[*current_ln], area);
             if line_as_rows.len() + rows.len() > area.height as usize {
                 break *current_ln + 1;
             }
@@ -218,6 +218,12 @@ impl<'a> TextView<'a> {
         }
 
         rows
+    }
+}
+
+impl<'a> Default for TextView<'a> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

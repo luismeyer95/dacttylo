@@ -4,7 +4,7 @@ use crate::{
     text_coord::TextCoord,
     text_view::{Anchor, TextView},
 };
-use std::{cell::Cell, collections::HashMap, ops::Range};
+use std::{collections::HashMap, ops::Range};
 use tui::{
     buffer::Buffer,
     layout::Rect,
@@ -39,6 +39,12 @@ impl EditorViewState {
 
     pub fn focus(&mut self, coord: TextCoord) {
         self.focus_coord = coord;
+    }
+}
+
+impl Default for EditorViewState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -98,13 +104,19 @@ impl<'a> EditorRenderer<'a> {
     }
 }
 
+impl<'a> Default for EditorRenderer<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> StatefulWidget for EditorRenderer<'a> {
     type State = EditorViewState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let anchor = Self::compute_anchor(state);
 
-        let eggshell = Color::Rgb(255, 239, 214);
+        // let eggshell = Color::Rgb(255, 239, 214);
         let darkblue = Color::Rgb(0, 27, 46);
 
         let view = TextView::new()
