@@ -8,7 +8,7 @@ use dacttylo::{
     self,
     cli::*,
     network::{self, NetEvent},
-    session::{SessionCommand, SessionData},
+    session::{SessionClient, SessionCommand, SessionData},
     utils::time::*,
 };
 use tokio::io::{self, AsyncBufReadExt};
@@ -39,7 +39,7 @@ async fn handle_host(user: String, file: String) -> AsyncResult<()> {
     println!("Local peer id: {:?}", peer_id);
 
     let (p2p_client, mut event_stream, task) = network::new(id_keys.clone()).await?;
-    let mut client = dacttylo::session::SessionClient::new(p2p_client);
+    let mut client = SessionClient::new(p2p_client);
 
     tokio::spawn(task.run());
     let mut stdin = io::BufReader::new(io::stdin()).lines();
@@ -90,7 +90,7 @@ async fn handle_host(user: String, file: String) -> AsyncResult<()> {
                 match state {
                     // lock registrations when host presses enter
                     State::TakingRegistrations => {
-                        let date = datetime_in(Duration::from_secs(3)).unwrap();
+                        let date = datetime_in(chrono::Duration::seconds(3)).unwrap();
                         let lock_cmd = SessionCommand::LockSession { registered_users: registered_users.clone(), session_start: date.to_string()  };
 
                         println!("Locking session...");
@@ -155,6 +155,20 @@ async fn handle_host(user: String, file: String) -> AsyncResult<()> {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
+async fn search_session(client: &mut SessionClient, host: String) -> SessionData {
+    loop {
+        println!("Searching session...");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        if let Ok(mut session_list) = client.get_hosted_sessions(&host).await {
+            if let Some(session) = session_list.pop() {
+                return session;
+            }
+        }
+    }
+}
+
 async fn handle_join(user: String, host: String) -> AsyncResult<()> {
     println!(
         "'Join' was used, name is: {:?}, joining host {:?}",
@@ -167,7 +181,7 @@ async fn handle_join(user: String, host: String) -> AsyncResult<()> {
     println!("Local peer id: {:?}", peer_id);
 
     let (p2p_client, mut event_stream, task) = network::new(id_keys).await?;
-    let mut client = dacttylo::session::SessionClient::new(p2p_client);
+    let mut client = SessionClient::new(p2p_client);
 
     tokio::spawn(task.run());
     let mut stdin = io::BufReader::new(io::stdin()).lines();
@@ -175,13 +189,8 @@ async fn handle_join(user: String, host: String) -> AsyncResult<()> {
     let SessionData {
         session_id,
         metadata,
-    } = loop {
-        println!("Searching session...");
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        if let Ok(data) = client.get_hosted_session_data(&host).await {
-            break data;
-        }
-    };
+    } = search_session(&mut client, host).await;
+
     println!("Session found!");
     let text = String::from_utf8(metadata)?;
 

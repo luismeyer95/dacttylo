@@ -1,8 +1,7 @@
 use chrono::{DateTime, Utc};
 
-pub fn datetime_in(delay: std::time::Duration) -> Option<DateTime<Utc>> {
-    let chrono_delay = chrono::Duration::from_std(delay).ok()?;
-    let future_date = Utc::now().checked_add_signed(chrono_delay)?;
+pub fn datetime_in(delay: chrono::Duration) -> Option<DateTime<Utc>> {
+    let future_date = Utc::now().checked_add_signed(delay)?;
     Some(future_date)
 }
 

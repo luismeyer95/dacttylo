@@ -30,23 +30,24 @@ impl SessionClient {
             .ok_or("Session not found")
     }
 
-    pub async fn get_hosted_session_data(&mut self, host: &str) -> AsyncResult<SessionData> {
+    pub async fn get_hosted_sessions(&mut self, host: &str) -> AsyncResult<Vec<SessionData>> {
         let key = Key::new(&host);
         let err_str = format!("Could not find record `{:?}`", key);
 
-        let mut result = self
+        let result = self
             .p2p_client
             .get_record(key.clone())
             .await
             .expect("P2P client channel failure")
             .map_err(|_| err_str.clone())?;
 
-        let PeerRecord {
-            record: Record { value, .. },
-            ..
-        } = result.records.pop().ok_or(err_str)?;
+        let session_list: Vec<SessionData> = result
+            .records
+            .iter()
+            .filter_map(|peer_record| bincode::deserialize(&peer_record.record.value).ok())
+            .collect();
 
-        Ok(bincode::deserialize(&value)?)
+        Ok(session_list)
     }
 
     pub async fn host_session(&mut self, host: &str, session_data: SessionData) -> AsyncResult<()> {
@@ -68,14 +69,13 @@ impl SessionClient {
     }
 
     pub async fn stop_hosting_session(&mut self, host: &str) -> AsyncResult<()> {
-        let err_p2p = "P2P client channel failure";
-
         self.leave_session().await?;
 
+        // This will only remove the record previously set by the local peer if any
         self.p2p_client
             .remove_record(Key::new(&host))
             .await
-            .expect(err_p2p);
+            .expect("P2P client channel failure");
 
         self.current_session_id = None;
 
