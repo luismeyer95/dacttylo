@@ -55,8 +55,7 @@ async fn handle_host(user: String, file: String) -> AsyncResult<()> {
                 metadata: text.as_str().into(),
             },
         )
-        .await
-        .unwrap_err();
+        .await;
 
     enum State {
         TakingRegistrations,

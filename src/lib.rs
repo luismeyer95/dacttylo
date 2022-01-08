@@ -3,6 +3,7 @@
 pub mod cli;
 pub mod editor_state;
 pub mod editor_view;
+pub mod events;
 pub mod highlight;
 pub mod line_processor;
 pub mod line_stylizer;

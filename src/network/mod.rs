@@ -30,7 +30,7 @@ type AsyncResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 pub fn generate_noise_keys(id_keys: &identity::Keypair) -> AuthenticKeypair<X25519Spec> {
     noise::Keypair::<noise::X25519Spec>::new()
-        .into_authentic(&id_keys)
+        .into_authentic(id_keys)
         .expect("Signing libp2p-noise static DH keypair failed.")
 }
 
@@ -56,7 +56,7 @@ pub async fn generate_swarm(
         Kademlia::new(peer_id, store)
     };
 
-    let floodsub = Floodsub::new(peer_id.clone());
+    let floodsub = Floodsub::new(peer_id);
 
     let behaviour = event_loop::Behaviour {
         mdns,
@@ -84,14 +84,14 @@ pub async fn new(
 ) -> AsyncResult<(P2PClient, impl Stream<Item = NetEvent>, EventLoop)> {
     let peer_id = PeerId::from(id_keys.public());
 
-    // Create a keypair for authenticated encryption of the transport.
+    // Create a keypair for authenticated encryption of the transport
     let noise_keys = generate_noise_keys(&id_keys);
 
     // Create a tokio-based TCP transport use noise for authenticated
-    // encryption and Mplex for multiplexing of substreams on a TCP stream.
+    // encryption and Mplex for multiplexing of substreams on a TCP stream
     let transport = generate_transport(noise_keys);
 
-    // Create a Swarm to manage peers and events.
+    // Create a Swarm to manage peers and events
     let mut swarm = generate_swarm(peer_id, transport).await?;
 
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
