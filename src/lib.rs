@@ -1,5 +1,6 @@
 #![allow(clippy::new_without_default)]
 
+pub mod app;
 pub mod cli;
 pub mod editor_state;
 pub mod editor_view;

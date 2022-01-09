@@ -18,7 +18,7 @@ pub enum Commands {
         #[clap(short, long)]
         user: String,
 
-        /// Path of the file to race on
+        /// Path to the file to race on
         #[clap(short, long)]
         file: String,
     },
@@ -31,6 +31,13 @@ pub enum Commands {
         /// Your username
         #[clap(short, long)]
         user: String,
+    },
+
+    /// Solo practice session
+    Practice {
+        /// The file to practice on
+        #[clap(short, long)]
+        file: String,
     },
 }
 

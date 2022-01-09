@@ -128,6 +128,35 @@ impl<'a> TextView<'a> {
         }
     }
 
+    fn generate_start_anchor(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
+        let lines = std::mem::take(&mut self.text_lines);
+        let mut current_ln = anchor;
+        let rows = self.generate_rows_down(&mut current_ln, &lines, &area);
+
+        if let Some(metadata_handler) = &mut self.metadata_handler {
+            metadata_handler(anchor..current_ln);
+        }
+
+        rows
+    }
+
+    fn generate_end_anchor(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
+        let lines = std::mem::take(&mut self.text_lines);
+        let mut start_ln = anchor - 1;
+        let mut end_ln = anchor;
+
+        let mut rows = self.generate_rows_up(&mut start_ln, &lines, &area);
+        let bottom_rows = self.generate_rows_down(&mut end_ln, &lines, &area);
+        rows.extend(bottom_rows);
+
+        // passing the actually displayed line range
+        if let Some(metadata_handler) = &mut self.metadata_handler {
+            metadata_handler(start_ln..end_ln);
+        }
+
+        rows
+    }
+
     fn generate_rows_down<'txt>(
         &mut self,
         current_ln: &mut usize,
@@ -172,18 +201,6 @@ impl<'a> TextView<'a> {
         rows
     }
 
-    fn generate_start_anchor(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let lines = std::mem::take(&mut self.text_lines);
-        let mut current_ln = anchor;
-        let rows = self.generate_rows_down(&mut current_ln, &lines, &area);
-
-        if let Some(metadata_handler) = &mut self.metadata_handler {
-            metadata_handler(anchor..current_ln);
-        }
-
-        rows
-    }
-
     fn extract_ln_styling(
         map: &HashMap<TextCoord, tui::style::Style>,
         ln_offset: usize,
@@ -201,23 +218,6 @@ impl<'a> TextView<'a> {
     ) -> Vec<Vec<StyledGrapheme<'txt>>> {
         let styling = Self::extract_ln_styling(&self.sparse_styling, line_nb);
         self.line_processor.process_line(line, styling, area.width)
-    }
-
-    fn generate_end_anchor(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let lines = std::mem::take(&mut self.text_lines);
-        let mut start_ln = anchor - 1;
-        let mut end_ln = anchor;
-
-        let mut rows = self.generate_rows_up(&mut start_ln, &lines, &area);
-        let bottom_rows = self.generate_rows_down(&mut end_ln, &lines, &area);
-        rows.extend(bottom_rows);
-
-        // passing the actually displayed line range
-        if let Some(metadata_handler) = &mut self.metadata_handler {
-            metadata_handler(start_ln..end_ln);
-        }
-
-        rows
     }
 }
 

@@ -25,6 +25,7 @@ async fn main() {
     if let Err(e) = match cli.command.clone() {
         Commands::Host { user, file } => handle_host(user, file).await,
         Commands::Join { user, host } => handle_join(user, host).await,
+        _ => panic!("Unexpected command"),
     } {
         eprintln!("Error: {}", e);
     }

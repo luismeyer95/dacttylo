@@ -7,7 +7,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'dacttylo'",
+            "name": "Debug editor",
             "cargo": {
                 "args": ["build", "--bin=dacttylo", "--package=dacttylo"],
                 "filter": {
@@ -16,6 +16,21 @@
                 }
             },
             "args": ["src/line_stylizer.rs"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "openOnFirstSessionStart"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'dacttylo'",
+            "cargo": {
+                "args": ["build", "--bin=events_test", "--package=dacttylo"],
+                "filter": {
+                    "kind": "bin"
+                }
+            },
+            "args": [],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "internalConsoleOptions": "openOnFirstSessionStart"

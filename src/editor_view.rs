@@ -59,7 +59,7 @@ impl<'a> EditorRenderer<'a> {
     }
 
     pub fn content(mut self, lines: Vec<&'a str>) -> Self {
-        // to remove!
+        // TODO: remove!
         let mut hl = SyntectHighlight::new();
         self.text_lines = lines
             .into_iter()
