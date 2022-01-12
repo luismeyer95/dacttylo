@@ -1,4 +1,7 @@
-use crate::{line_processor::LineProcessor, line_stylizer::LineStylizer, text_coord::TextCoord};
+use crate::{
+    line_processor::LineProcessor, line_stylizer::LineStylizer,
+    text_coord::TextCoord,
+};
 use std::collections::HashMap;
 use std::ops::Range;
 use tui::{
@@ -76,7 +79,10 @@ impl<'a> TextView<'a> {
         self
     }
 
-    pub fn line_processor(mut self, line_processor: Box<dyn LineProcessor>) -> Self {
+    pub fn line_processor(
+        mut self,
+        line_processor: Box<dyn LineProcessor>,
+    ) -> Self {
         self.line_processor = line_processor;
         self
     }
@@ -97,7 +103,10 @@ impl<'a> TextView<'a> {
         self
     }
 
-    pub fn sparse_styling(mut self, sparse_styling: HashMap<TextCoord, tui::style::Style>) -> Self {
+    pub fn sparse_styling(
+        mut self,
+        sparse_styling: HashMap<TextCoord, tui::style::Style>,
+    ) -> Self {
         self.sparse_styling = sparse_styling;
         self
     }
@@ -107,7 +116,10 @@ impl<'a> TextView<'a> {
         self
     }
 
-    pub fn on_wrap(mut self, callback: Box<dyn FnMut(Range<usize>) + 'a>) -> Self {
+    pub fn on_wrap(
+        mut self,
+        callback: Box<dyn FnMut(Range<usize>) + 'a>,
+    ) -> Self {
         self.metadata_handler = Some(callback);
         self
     }
@@ -126,13 +138,16 @@ impl<'a> TextView<'a> {
         match self.anchor {
             Anchor::Start(anchor) => self.generate_start_anchor(anchor, area),
             Anchor::End(anchor) => self.generate_end_anchor(anchor, area),
-            Anchor::Center(anchor) => {
-                self.generate_end_anchor(anchor + area.height as usize / 2, area)
-            }
+            Anchor::Center(anchor) => self
+                .generate_end_anchor(anchor + area.height as usize / 2, area),
         }
     }
 
-    fn generate_start_anchor(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
+    fn generate_start_anchor(
+        &mut self,
+        anchor: usize,
+        area: Rect,
+    ) -> Vec<Vec<StyledGrapheme<'_>>> {
         let lines = std::mem::take(&mut self.text_lines);
         let mut current_ln = anchor;
         let rows = self.expand_rows_down(&mut current_ln, &lines, &area);
@@ -144,7 +159,11 @@ impl<'a> TextView<'a> {
         rows
     }
 
-    fn generate_end_anchor(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
+    fn generate_end_anchor(
+        &mut self,
+        anchor: usize,
+        area: Rect,
+    ) -> Vec<Vec<StyledGrapheme<'_>>> {
         let lines = std::mem::take(&mut self.text_lines);
         let mut start_ln = anchor - 1;
         let mut end_ln = anchor;
@@ -173,7 +192,8 @@ impl<'a> TextView<'a> {
         let halved_area = Rect::new(0, 0, area.width, area.height / 2);
 
         let mut rows = self.expand_rows_up(&mut start_ln, &lines, &halved_area);
-        let bottom_rows = self.expand_rows_down(&mut end_ln, &lines, &halved_area);
+        let bottom_rows =
+            self.expand_rows_down(&mut end_ln, &lines, &halved_area);
         rows.extend(bottom_rows);
 
         // passing the actually displayed line range
@@ -193,7 +213,8 @@ impl<'a> TextView<'a> {
         let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
 
         while *current_ln < lines.len() {
-            let line_as_rows = self.line_to_rows(*current_ln, &lines[*current_ln], area);
+            let line_as_rows =
+                self.line_to_rows(*current_ln, &lines[*current_ln], area);
             if line_as_rows.len() + rows.len() > area.height as usize {
                 break;
             }
@@ -213,7 +234,8 @@ impl<'a> TextView<'a> {
         let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
 
         *current_ln = loop {
-            let mut line_as_rows = self.line_to_rows(*current_ln, &lines[*current_ln], area);
+            let mut line_as_rows =
+                self.line_to_rows(*current_ln, &lines[*current_ln], area);
             if line_as_rows.len() + rows.len() > area.height as usize {
                 break *current_ln + 1;
             }
@@ -233,7 +255,9 @@ impl<'a> TextView<'a> {
         ln_offset: usize,
     ) -> HashMap<usize, tui::style::Style> {
         map.iter()
-            .filter_map(|(coord, &style)| (coord.ln == ln_offset).then(|| (coord.x, style)))
+            .filter_map(|(coord, &style)| {
+                (coord.ln == ln_offset).then(|| (coord.x, style))
+            })
             .collect()
     }
 
