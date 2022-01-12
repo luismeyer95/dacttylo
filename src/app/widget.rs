@@ -1,4 +1,5 @@
 use crate::highlight::Highlighter;
+use crate::utils::helpers;
 use crate::{
     highlight::SyntectHighlight,
     text_coord::TextCoord,
@@ -88,11 +89,14 @@ impl<'txt> Widget for DacttyloWidget<'txt> {
 
         // let eggshell = Color::Rgb(255, 239, 214);
         let darkblue = Color::Rgb(0, 27, 46);
+        let main_player = self.game_state.main_player().unwrap();
+        let main_coord =
+            helpers::text_to_line_index(vec![main_player.cursor()], &text_lines).unwrap()[0];
 
         let view = TextView::new()
             .sparse_styling(self.get_cursor_styles(&text_lines))
             .styled_content(styled_lines)
-            .anchor(Anchor::Start(0))
+            .anchor(Anchor::Center(main_coord.0))
             .bg_color(darkblue);
         view.render(area, buf);
     }

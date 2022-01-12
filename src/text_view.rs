@@ -13,6 +13,7 @@ type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;
 
 pub enum Anchor {
     Start(usize),
+    Center(usize),
     End(usize),
 }
 
@@ -125,13 +126,16 @@ impl<'a> TextView<'a> {
         match self.anchor {
             Anchor::Start(anchor) => self.generate_start_anchor(anchor, area),
             Anchor::End(anchor) => self.generate_end_anchor(anchor, area),
+            Anchor::Center(anchor) => {
+                self.generate_end_anchor(anchor + area.height as usize / 2, area)
+            }
         }
     }
 
     fn generate_start_anchor(&mut self, anchor: usize, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
         let lines = std::mem::take(&mut self.text_lines);
         let mut current_ln = anchor;
-        let rows = self.generate_rows_down(&mut current_ln, &lines, &area);
+        let rows = self.expand_rows_down(&mut current_ln, &lines, &area);
 
         if let Some(metadata_handler) = &mut self.metadata_handler {
             metadata_handler(anchor..current_ln);
@@ -145,8 +149,8 @@ impl<'a> TextView<'a> {
         let mut start_ln = anchor - 1;
         let mut end_ln = anchor;
 
-        let mut rows = self.generate_rows_up(&mut start_ln, &lines, &area);
-        let bottom_rows = self.generate_rows_down(&mut end_ln, &lines, &area);
+        let mut rows = self.expand_rows_up(&mut start_ln, &lines, &area);
+        let bottom_rows = self.expand_rows_down(&mut end_ln, &lines, &area);
         rows.extend(bottom_rows);
 
         // passing the actually displayed line range
@@ -157,7 +161,30 @@ impl<'a> TextView<'a> {
         rows
     }
 
-    fn generate_rows_down<'txt>(
+    fn generate_center_anchor(
+        &mut self,
+        anchor: usize,
+        area: Rect,
+    ) -> Vec<Vec<StyledGrapheme<'_>>> {
+        let lines = std::mem::take(&mut self.text_lines);
+        let mut start_ln = anchor;
+        let mut end_ln = anchor + 1;
+
+        let halved_area = Rect::new(0, 0, area.width, area.height / 2);
+
+        let mut rows = self.expand_rows_up(&mut start_ln, &lines, &halved_area);
+        let bottom_rows = self.expand_rows_down(&mut end_ln, &lines, &halved_area);
+        rows.extend(bottom_rows);
+
+        // passing the actually displayed line range
+        if let Some(metadata_handler) = &mut self.metadata_handler {
+            metadata_handler(start_ln..end_ln);
+        }
+
+        rows
+    }
+
+    fn expand_rows_down<'txt>(
         &mut self,
         current_ln: &mut usize,
         lines: &[Vec<(&'txt str, tui::style::Style)>],
@@ -177,7 +204,7 @@ impl<'a> TextView<'a> {
         rows
     }
 
-    fn generate_rows_up<'txt>(
+    fn expand_rows_up<'txt>(
         &mut self,
         current_ln: &mut usize,
         lines: &[Vec<(&'txt str, tui::style::Style)>],

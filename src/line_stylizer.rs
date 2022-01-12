@@ -35,15 +35,13 @@ impl LineStylizer {
         });
 
         let mut inline_offset = 0;
-        let mut key_offset = 0;
         let mut transformed_line: Vec<StyledGrapheme> = vec![];
 
-        for gphm in graphemes.into_iter() {
+        for (key_offset, gphm) in graphemes.into_iter().enumerate() {
             let remapped_key = Self::remap_symbol(inline_offset, gphm.clone());
             let styled_key = Self::apply_sparse_styling(key_offset, remapped_key, &sparse_styling);
-            let size = styled_key.iter().count();
+            let size = styled_key.len();
             transformed_line.extend(styled_key);
-            key_offset += 1;
             inline_offset += size;
         }
 
@@ -84,9 +82,9 @@ impl LineStylizer {
         mut key_as_graphemes: Vec<StyledGrapheme<'txt>>,
         sparse_styling: &HashMap<usize, tui::style::Style>,
     ) -> Vec<StyledGrapheme<'txt>> {
-        sparse_styling
-            .get(&key_offset)
-            .map(|style| key_as_graphemes[0].style = *style);
+        if let Some(style) = sparse_styling.get(&key_offset) {
+            key_as_graphemes[0].style = *style;
+        }
         key_as_graphemes
     }
 
@@ -97,10 +95,7 @@ impl LineStylizer {
             .collect()
     }
 
-    fn remap_symbol<'txt>(
-        inline_index: usize,
-        grapheme: StyledGrapheme<'txt>,
-    ) -> Vec<StyledGrapheme<'txt>> {
+    fn remap_symbol(inline_index: usize, grapheme: StyledGrapheme) -> Vec<StyledGrapheme> {
         match grapheme.symbol {
             "\n" => Self::remap_newline(grapheme),
             "\t" => Self::remap_tab(grapheme, inline_index),
@@ -114,16 +109,28 @@ impl LineStylizer {
             .style
             .patch(tui::style::Style::default().fg(tui::style::Color::Yellow));
 
-        vec![StyledGrapheme {
+        let mut tab = vec![StyledGrapheme {
             symbol: Self::TAB_SYMBOL,
             style,
-        }]
-        .into_iter()
-        .chain(vec![
+        }];
+
+        tab.extend(vec![
             StyledGrapheme { symbol: " ", style };
             (tab_width - 1) as usize
-        ])
-        .collect()
+        ]);
+
+        tab
+
+        // vec![StyledGrapheme {
+        //     symbol: Self::TAB_SYMBOL,
+        //     style,
+        // }]
+        // .into_iter()
+        // .chain(vec![
+        //     StyledGrapheme { symbol: " ", style };
+        //     (tab_width - 1) as usize
+        // ])
+        // .collect()
     }
 
     fn remap_newline(grapheme: StyledGrapheme) -> Vec<StyledGrapheme> {
