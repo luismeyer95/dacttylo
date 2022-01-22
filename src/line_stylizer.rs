@@ -7,7 +7,7 @@ pub struct LineStylizer;
 
 impl LineProcessor for LineStylizer {
     fn process_line<'txt>(
-        &mut self,
+        &self,
         line: &[(&'txt str, tui::style::Style)],
         sparse_styling: HashMap<usize, tui::style::Style>,
         width: u16,
@@ -22,7 +22,7 @@ impl LineStylizer {
     const NL_SYMBOL: &'static str = "\u{23ce}";
 
     fn transform_line<'txt>(
-        &mut self,
+        &self,
         line: &[(&'txt str, tui::style::Style)],
         sparse_styling: HashMap<usize, tui::style::Style>,
     ) -> Vec<StyledGrapheme<'txt>> {
@@ -39,7 +39,11 @@ impl LineStylizer {
 
         for (key_offset, gphm) in graphemes.into_iter().enumerate() {
             let remapped_key = Self::remap_symbol(inline_offset, gphm.clone());
-            let styled_key = Self::apply_sparse_styling(key_offset, remapped_key, &sparse_styling);
+            let styled_key = Self::apply_sparse_styling(
+                key_offset,
+                remapped_key,
+                &sparse_styling,
+            );
             let size = styled_key.len();
             transformed_line.extend(styled_key);
             inline_offset += size;
@@ -88,14 +92,20 @@ impl LineStylizer {
         key_as_graphemes
     }
 
-    fn wrap_line(graphemes: Vec<StyledGrapheme>, width: u16) -> Vec<Vec<StyledGrapheme>> {
+    fn wrap_line(
+        graphemes: Vec<StyledGrapheme>,
+        width: u16,
+    ) -> Vec<Vec<StyledGrapheme>> {
         graphemes
             .chunks((width) as usize)
             .map(|x| x.to_vec())
             .collect()
     }
 
-    fn remap_symbol(inline_index: usize, grapheme: StyledGrapheme) -> Vec<StyledGrapheme> {
+    fn remap_symbol(
+        inline_index: usize,
+        grapheme: StyledGrapheme,
+    ) -> Vec<StyledGrapheme> {
         match grapheme.symbol {
             "\n" => Self::remap_newline(grapheme),
             "\t" => Self::remap_tab(grapheme, inline_index),
@@ -103,7 +113,10 @@ impl LineStylizer {
         }
     }
 
-    fn remap_tab(grapheme: StyledGrapheme, inline_index: usize) -> Vec<StyledGrapheme> {
+    fn remap_tab(
+        grapheme: StyledGrapheme,
+        inline_index: usize,
+    ) -> Vec<StyledGrapheme> {
         let tab_width = (4 - inline_index % 4) as u8;
         let style = grapheme
             .style
@@ -136,9 +149,9 @@ impl LineStylizer {
     fn remap_newline(grapheme: StyledGrapheme) -> Vec<StyledGrapheme> {
         vec![StyledGrapheme {
             symbol: Self::NL_SYMBOL,
-            style: grapheme
-                .style
-                .patch(tui::style::Style::default().fg(tui::style::Color::Yellow)),
+            style: grapheme.style.patch(
+                tui::style::Style::default().fg(tui::style::Color::Yellow),
+            ),
         }]
     }
 }

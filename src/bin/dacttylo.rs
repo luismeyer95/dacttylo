@@ -9,7 +9,10 @@ use dacttylo::{
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
+        LeaveAlternateScreen,
+    },
 };
 
 use std::{
@@ -35,7 +38,7 @@ fn typebox_app() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let tick_rate = Duration::from_millis(50);
+    let tick_rate = Duration::from_millis(500);
     let res = run_app(&mut terminal, tick_rate);
 
     // restore terminal
@@ -56,8 +59,9 @@ fn run_app<B: Backend>(
 ) -> Result<(), Box<dyn Error>> {
     let mut last_tick = Instant::now();
 
-    let arg = std::env::args().nth(1).ok_or("No file provided")?;
-    let text_content = std::fs::read_to_string(&arg)?;
+    // let arg = std::env::args().nth(1).ok_or("No file provided")?;
+    // let text_content = std::fs::read_to_string(&arg)?;
+    let text_content = "";
 
     let mut editor = EditorState::new().content(&text_content);
     let mut editor_view = EditorViewState::new();

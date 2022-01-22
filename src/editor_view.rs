@@ -66,7 +66,9 @@ impl<'a> EditorRenderer<'a> {
             .map(|s| {
                 hl.highlight_line(s)
                     .into_iter()
-                    .map(|(tkn, color)| (tkn, tui::style::Style::default().fg(color)))
+                    .map(|(tkn, color)| {
+                        (tkn, tui::style::Style::default().fg(color))
+                    })
                     .collect()
             })
             .collect();
@@ -130,12 +132,14 @@ impl<'a> StatefulWidget for EditorRenderer<'a> {
                 });
             }))
             .bg_color(darkblue)
-            .sparse_styling(HashMap::<TextCoord, tui::style::Style>::from_iter(vec![(
-                TextCoord::new(state.focus_coord.ln, state.focus_coord.x),
-                tui::style::Style::default()
-                    .bg(Color::White)
-                    .fg(Color::Black),
-            )]));
+            .sparse_styling(
+                HashMap::<TextCoord, tui::style::Style>::from_iter(vec![(
+                    TextCoord::new(state.focus_coord.ln, state.focus_coord.x),
+                    tui::style::Style::default()
+                        .bg(Color::White)
+                        .fg(Color::Black),
+                )]),
+            );
         view.render(area, buf);
     }
 }

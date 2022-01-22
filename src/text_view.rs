@@ -138,8 +138,8 @@ impl<'a> TextView<'a> {
         match self.anchor {
             Anchor::Start(anchor) => self.generate_start_anchor(anchor, area),
             Anchor::End(anchor) => self.generate_end_anchor(anchor, area),
-            Anchor::Center(anchor) => self
-                .generate_end_anchor(anchor + area.height as usize / 2, area),
+            // Anchor::Center(anchor) => self.generate_center_anchor(anchor, area),
+            _ => panic!("Disabled anchors"),
         }
     }
 
@@ -148,9 +148,9 @@ impl<'a> TextView<'a> {
         anchor: usize,
         area: Rect,
     ) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let lines = std::mem::take(&mut self.text_lines);
+        // let lines = std::mem::take(&mut self.text_lines);
         let mut current_ln = anchor;
-        let rows = self.expand_rows_down(&mut current_ln, &lines, &area);
+        let rows = self.expand_rows_down(&mut current_ln, area);
 
         if let Some(metadata_handler) = &mut self.metadata_handler {
             metadata_handler(anchor..current_ln);
@@ -165,11 +165,11 @@ impl<'a> TextView<'a> {
         area: Rect,
     ) -> Vec<Vec<StyledGrapheme<'_>>> {
         let lines = std::mem::take(&mut self.text_lines);
-        let mut start_ln = anchor - 1;
+        let mut start_ln = anchor - 1; // BAD
         let mut end_ln = anchor;
 
-        let mut rows = self.expand_rows_up(&mut start_ln, &lines, &area);
-        let bottom_rows = self.expand_rows_down(&mut end_ln, &lines, &area);
+        let mut rows = self.expand_rows_up(&mut start_ln, &lines, area);
+        let bottom_rows = self.expand_rows_down(&mut end_ln, &lines, area);
         rows.extend(bottom_rows);
 
         // passing the actually displayed line range
@@ -180,46 +180,56 @@ impl<'a> TextView<'a> {
         rows
     }
 
-    fn generate_center_anchor(
-        &mut self,
-        anchor: usize,
-        area: Rect,
-    ) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let lines = std::mem::take(&mut self.text_lines);
-        let mut start_ln = anchor;
-        let mut end_ln = anchor + 1;
+    // fn generate_center_anchor(
+    //     &mut self,
+    //     anchor: usize,
+    //     area: Rect,
+    // ) -> Vec<Vec<StyledGrapheme<'_>>> {
+    //     let lines = std::mem::take(&mut self.text_lines);
+    //     let mut start_ln = anchor.saturating_sub(1);
+    //     let mut end_ln = anchor;
 
-        let halved_area = Rect::new(0, 0, area.width, area.height / 2);
+    //     let mut down_limit =
+    //         area.height as usize / 2 + usize::from(area.height % 2 == 1);
+    //     let mut up_limit = area.height as usize / 2;
 
-        let mut rows = self.expand_rows_up(&mut start_ln, &lines, &halved_area);
-        let bottom_rows =
-            self.expand_rows_down(&mut end_ln, &lines, &halved_area);
-        rows.extend(bottom_rows);
+    //     let bottom_rows =
+    //         self.expand_rows_down(&mut end_ln, &lines, area.width, down_limit);
+    //     up_limit += down_limit.saturating_sub(bottom_rows.len());
+    //     let mut rows =
+    //         self.expand_rows_up(&mut start_ln, &lines, area.width, up_limit);
+    //     rows.extend(bottom_rows);
 
-        // passing the actually displayed line range
-        if let Some(metadata_handler) = &mut self.metadata_handler {
-            metadata_handler(start_ln..end_ln);
-        }
+    //     down_limit = (area.height as usize).saturating_sub(rows.len());
+    //     let bottom_rows =
+    //         self.expand_rows_down(&mut end_ln, &lines, area.width, down_limit);
+    //     rows.extend(bottom_rows);
 
-        rows
-    }
+    //     // passing the actually displayed line range
+    //     if let Some(metadata_handler) = &mut self.metadata_handler {
+    //         metadata_handler(start_ln..end_ln);
+    //     }
+
+    //     rows
+    // }
 
     fn expand_rows_down<'txt>(
         &mut self,
-        current_ln: &mut usize,
-        lines: &[Vec<(&'txt str, tui::style::Style)>],
-        area: &Rect,
+        ln_nb: &mut usize,
+        // lines: &[Vec<(&'txt str, tui::style::Style)>],
+        area: Rect,
     ) -> Vec<Vec<StyledGrapheme<'txt>>> {
         let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
 
-        while *current_ln < lines.len() {
+        while *ln_nb < self.text_lines.len() {
             let line_as_rows =
-                self.line_to_rows(*current_ln, &lines[*current_ln], area);
-            if line_as_rows.len() + rows.len() > area.height as usize {
-                break;
-            }
+                self.line_to_rows(*ln_nb, &lines[*ln_nb], area.width);
             rows.extend(line_as_rows);
-            *current_ln += 1;
+            if rows.len() > area.height.into() {
+                rows.truncate(area.height.into());
+                return rows;
+            }
+            *ln_nb += 1;
         }
 
         rows
@@ -227,27 +237,27 @@ impl<'a> TextView<'a> {
 
     fn expand_rows_up<'txt>(
         &mut self,
-        current_ln: &mut usize,
+        ln_nb: &mut usize,
         lines: &[Vec<(&'txt str, tui::style::Style)>],
-        area: &Rect,
+        area: Rect,
     ) -> Vec<Vec<StyledGrapheme<'txt>>> {
         let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
 
-        *current_ln = loop {
+        loop {
             let mut line_as_rows =
-                self.line_to_rows(*current_ln, &lines[*current_ln], area);
-            if line_as_rows.len() + rows.len() > area.height as usize {
-                break *current_ln + 1;
-            }
+                self.line_to_rows(*ln_nb, &lines[*ln_nb], area.width);
             line_as_rows.extend(rows);
             rows = line_as_rows;
-            match current_ln.checked_sub(1) {
-                Some(next) => *current_ln = next,
-                None => break 0,
+            if rows.len() >= area.height.into() {
+                rows.drain(0..(rows.len() - area.height as usize));
+                *ln_nb += 1;
+                return rows;
             }
-        };
-
-        rows
+            match ln_nb.checked_sub(1) {
+                Some(next) => *ln_nb = next,
+                None => return rows,
+            }
+        }
     }
 
     fn extract_ln_styling(
@@ -264,11 +274,12 @@ impl<'a> TextView<'a> {
     fn line_to_rows<'txt>(
         &mut self,
         line_nb: usize,
-        line: &[(&'txt str, tui::style::Style)],
-        area: &Rect,
+        // line: &[(&'txt str, tui::style::Style)],
+        width: u16,
     ) -> Vec<Vec<StyledGrapheme<'txt>>> {
+        let line = self.text_lines[line_nb].as_slice();
         let styling = Self::extract_ln_styling(&self.sparse_styling, line_nb);
-        self.line_processor.process_line(line, styling, area.width)
+        self.line_processor.process_line(line, styling, width)
     }
 }
 
