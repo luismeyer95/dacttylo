@@ -2,6 +2,7 @@ use crate::{
     line_processor::LineProcessor, line_stylizer::LineStylizer,
     text_coord::TextCoord,
 };
+use std::cmp::min;
 use std::ops::Range;
 use std::{cmp::Ordering, collections::HashMap};
 use tui::{
@@ -22,7 +23,6 @@ pub enum Anchor {
 
 pub struct RenderMetadata {
     pub lines_rendered: Range<usize>,
-    pub anchor: Anchor,
 }
 
 /// Lower level, stateless text displaying engine.
@@ -93,18 +93,15 @@ impl<'a> TextView<'a> {
     }
 
     pub fn anchor(mut self, anchor: Anchor) -> Self {
-        match &anchor {
-            Anchor::Start(anchor) if *anchor >= self.text_lines.len() => {
+        self.anchor = match anchor {
+            Anchor::Start(anchor) if anchor >= self.text_lines.len() => {
                 panic!("Anchor out of bounds")
             }
-
-            Anchor::End(anchor) if *anchor > self.text_lines.len() => {
-                panic!("Anchor out of bounds")
+            Anchor::End(anchor) => {
+                Anchor::End(min(anchor, self.text_lines.len()))
             }
-
-            _ => {}
-        }
-        self.anchor = anchor;
+            _ => anchor,
+        };
         self
     }
 
@@ -143,7 +140,7 @@ impl<'a> TextView<'a> {
         match self.anchor {
             Anchor::Start(anchor) => self.generate_start_anchor(anchor, area),
             Anchor::End(anchor) => self.generate_end_anchor(anchor, area),
-            // Anchor::Center(anchor) => self.generate_center_anchor(anchor, area),
+            Anchor::Center(anchor) => self.generate_center_anchor(anchor, area),
             _ => panic!("Disabled anchors"),
         }
     }
@@ -160,7 +157,6 @@ impl<'a> TextView<'a> {
         if let Some(mut handler) = handler {
             handler(RenderMetadata {
                 lines_rendered: anchor..end_ln,
-                anchor: Anchor::Start(anchor),
             });
         }
 
@@ -183,7 +179,30 @@ impl<'a> TextView<'a> {
         if let Some(mut handler) = handler {
             handler(RenderMetadata {
                 lines_rendered: start_ln..end_ln,
-                anchor: Anchor::End(anchor),
+            });
+        }
+
+        rows
+    }
+
+    fn generate_center_anchor(
+        &mut self,
+        anchor: usize,
+        area: Rect,
+    ) -> Vec<Vec<StyledGrapheme<'_>>> {
+        let handler = self.metadata_handler.take();
+
+        let area = Rect::new(0, 0, area.width, area.height / 2);
+
+        let (start_ln, mut rows) = self.expand_rows_up(anchor - 1, area);
+        let area = Rect::new(0, 0, area.width, area.height - rows.len() as u16); // cast should be safe
+        let (end_ln, bottom_rows) = self.expand_rows_down(anchor, area);
+        rows.extend(bottom_rows);
+
+        // passing the actually displayed line range
+        if let Some(mut handler) = handler {
+            handler(RenderMetadata {
+                lines_rendered: start_ln..end_ln,
             });
         }
 
@@ -221,20 +240,20 @@ impl<'a> TextView<'a> {
 
         for current_ln in (0..=start_ln).rev() {
             let mut line_as_rows = self.line_to_rows(current_ln, area.width);
-            if line_as_rows.len() + rows.len() > area.height as usize {
-                return (current_ln + 1, rows);
-            }
+            // if line_as_rows.len() + rows.len() > area.height as usize {
+            //     return (current_ln + 1, rows);
+            // }
             line_as_rows.extend(rows);
             rows = line_as_rows;
 
-            // match rows.len().cmp(&(area.height as usize)) {
-            //     Ordering::Equal => return (current_ln, rows),
-            //     Ordering::Greater => {
-            //         rows.drain(0..(rows.len() - area.height as usize));
-            //         return (current_ln + 1, rows);
-            //     }
-            //     _ => {}
-            // }
+            match rows.len().cmp(&(area.height as usize)) {
+                Ordering::Equal => return (current_ln, rows),
+                Ordering::Greater => {
+                    rows.drain(0..(rows.len() - area.height as usize));
+                    return (current_ln + 1, rows);
+                }
+                _ => {}
+            }
         }
 
         (0, rows)

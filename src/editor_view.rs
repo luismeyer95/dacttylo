@@ -84,10 +84,7 @@ impl<'a> EditorRenderer<'a> {
 
     fn compute_anchor(state: &mut EditorViewState) -> Anchor {
         match state.last_render.take() {
-            Some(RenderMetadata {
-                lines_rendered,
-                anchor,
-            }) => {
+            Some(RenderMetadata { lines_rendered }) => {
                 // if
                 if state.focus_coord.ln >= lines_rendered.end {
                     Anchor::End(state.focus_coord.ln + 1)
