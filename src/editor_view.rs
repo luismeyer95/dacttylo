@@ -1,4 +1,5 @@
 use crate::highlight::Highlighter;
+use crate::text_view::RenderMetadata;
 use crate::{
     highlight::SyntectHighlight,
     text_coord::TextCoord,
@@ -14,14 +15,9 @@ use tui::{
 
 type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;
 
-pub struct RenderMetadata {
-    pub buffer_height: u16,
-    pub lines_rendered: Range<usize>,
-}
 pub struct EditorViewState {
     /// The current line offset to use for rendering
-    pub anchor: usize,
-
+    // pub anchor: usize,
     pub last_render: Option<RenderMetadata>,
 
     /// The coord to keep in display range
@@ -31,7 +27,7 @@ pub struct EditorViewState {
 impl EditorViewState {
     pub fn new() -> Self {
         Self {
-            anchor: 0,
+            // anchor: 0,
             last_render: None,
             focus_coord: TextCoord::new(0, 0),
         }
@@ -90,7 +86,7 @@ impl<'a> EditorRenderer<'a> {
         match state.last_render.take() {
             Some(RenderMetadata {
                 lines_rendered,
-                buffer_height,
+                anchor,
             }) => {
                 // if
                 if state.focus_coord.ln >= lines_rendered.end {
@@ -98,10 +94,10 @@ impl<'a> EditorRenderer<'a> {
                 } else if state.focus_coord.ln < lines_rendered.start {
                     Anchor::Start(state.focus_coord.ln)
                 } else {
-                    Anchor::Start(state.anchor)
+                    Anchor::Start(lines_rendered.start)
                 }
             }
-            None => Anchor::Start(state.anchor),
+            None => Anchor::Start(0),
         }
     }
 }
@@ -124,13 +120,9 @@ impl<'a> StatefulWidget for EditorRenderer<'a> {
         let view = TextView::new()
             .styled_content(self.text_lines)
             .anchor(anchor)
-            .on_wrap(Box::new(|lines_rendered| {
-                state.anchor = lines_rendered.start;
-                state.last_render = Some(RenderMetadata {
-                    buffer_height: area.height,
-                    lines_rendered,
-                });
-            }))
+            .on_render(|metadata| {
+                state.last_render = Some(metadata);
+            })
             .bg_color(darkblue)
             .sparse_styling(
                 HashMap::<TextCoord, tui::style::Style>::from_iter(vec![(

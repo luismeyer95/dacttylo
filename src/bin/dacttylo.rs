@@ -59,9 +59,10 @@ fn run_app<B: Backend>(
 ) -> Result<(), Box<dyn Error>> {
     let mut last_tick = Instant::now();
 
-    // let arg = std::env::args().nth(1).ok_or("No file provided")?;
-    // let text_content = std::fs::read_to_string(&arg)?;
-    let text_content = "";
+    let text_content = match std::env::args().nth(1) {
+        Some(filepath) => std::fs::read_to_string(&filepath)?,
+        None => "".into(),
+    };
 
     let mut editor = EditorState::new().content(&text_content);
     let mut editor_view = EditorViewState::new();
