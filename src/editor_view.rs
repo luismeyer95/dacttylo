@@ -84,18 +84,26 @@ impl<'a> EditorRenderer<'a> {
 
     fn compute_anchor(state: &mut EditorViewState) -> Anchor {
         match state.last_render.take() {
-            Some(RenderMetadata { lines_rendered }) => {
-                // if
-                if state.focus_coord.ln >= lines_rendered.end {
+            Some(RenderMetadata {
+                lines_rendered,
+                anchor,
+            }) => {
+                if state.focus_coord.ln >= lines_rendered.end
+                    && !lines_rendered.is_empty()
+                {
                     Anchor::End(state.focus_coord.ln + 1)
-                } else if state.focus_coord.ln < lines_rendered.start {
+                } else if state.focus_coord.ln < lines_rendered.start
+                    && !lines_rendered.is_empty()
+                {
                     Anchor::Start(state.focus_coord.ln)
                 } else {
-                    Anchor::Start(lines_rendered.start)
+                    // Anchor::Start(lines_rendered.start)
+                    anchor
                 }
             }
             None => Anchor::Start(0),
         }
+        // Anchor::Center(state.focus_coord.ln)
     }
 }
 

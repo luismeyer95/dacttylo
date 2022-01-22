@@ -23,6 +23,7 @@ pub enum Anchor {
 
 pub struct RenderMetadata {
     pub lines_rendered: Range<usize>,
+    pub anchor: Anchor,
 }
 
 /// Lower level, stateless text displaying engine.
@@ -157,6 +158,7 @@ impl<'a> TextView<'a> {
         if let Some(mut handler) = handler {
             handler(RenderMetadata {
                 lines_rendered: anchor..end_ln,
+                anchor: Anchor::Start(anchor),
             });
         }
 
@@ -179,6 +181,7 @@ impl<'a> TextView<'a> {
         if let Some(mut handler) = handler {
             handler(RenderMetadata {
                 lines_rendered: start_ln..end_ln,
+                anchor: Anchor::End(anchor),
             });
         }
 
@@ -192,17 +195,20 @@ impl<'a> TextView<'a> {
     ) -> Vec<Vec<StyledGrapheme<'_>>> {
         let handler = self.metadata_handler.take();
 
-        let area = Rect::new(0, 0, area.width, area.height / 2);
+        let half_height_area = Rect::new(0, 0, area.width, area.height / 2);
 
-        let (start_ln, mut rows) = self.expand_rows_up(anchor - 1, area);
+        let (start_ln, mut rows) =
+            self.expand_rows_up(anchor, half_height_area);
+
         let area = Rect::new(0, 0, area.width, area.height - rows.len() as u16); // cast should be safe
-        let (end_ln, bottom_rows) = self.expand_rows_down(anchor, area);
+        let (end_ln, bottom_rows) = self.expand_rows_down(anchor + 1, area);
         rows.extend(bottom_rows);
 
-        // passing the actually displayed line range
+        // passing the fully displayed line range
         if let Some(mut handler) = handler {
             handler(RenderMetadata {
                 lines_rendered: start_ln..end_ln,
+                anchor: Anchor::Center(anchor),
             });
         }
 

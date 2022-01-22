@@ -33,7 +33,7 @@ fn typebox_app() -> Result<(), Box<dyn Error>> {
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -43,7 +43,11 @@ fn typebox_app() -> Result<(), Box<dyn Error>> {
 
     // restore terminal
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen,)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     if let Err(err) = res {
