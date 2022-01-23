@@ -76,6 +76,11 @@ impl<'a> TextView<'a> {
     }
 
     pub fn styled_content(mut self, lines: Vec<StyledLine<'a>>) -> Self {
+        self.bg_color = lines
+            .get(0)
+            .and_then(|ln| ln.get(0))
+            .and_then(|(_, style)| style.bg)
+            .map_or_else(|| tui::style::Color::Reset, |style| style);
         self.text_lines = lines;
         self
     }

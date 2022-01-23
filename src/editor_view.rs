@@ -1,11 +1,11 @@
-use crate::highlight::Highlighter;
+use crate::highlighting::Highlighter;
 use crate::text_view::RenderMetadata;
 use crate::{
-    highlight::SyntectHighlight,
+    highlighting::SyntectHighlighter,
     text_coord::TextCoord,
     text_view::{Anchor, TextView},
 };
-use std::{collections::HashMap, ops::Range};
+use std::collections::HashMap;
 use tui::{
     buffer::Buffer,
     layout::Rect,
@@ -55,26 +55,10 @@ impl<'a> EditorRenderer<'a> {
     }
 
     pub fn content(mut self, lines: Vec<&'a str>) -> Self {
-        // TODO: remove!
-        let mut hl = SyntectHighlight::new();
-        self.text_lines = lines
-            .into_iter()
-            .map(|s| {
-                hl.highlight_line(s)
-                    .into_iter()
-                    .map(|(tkn, color)| {
-                        (tkn, tui::style::Style::default().fg(color))
-                    })
-                    .collect()
-            })
-            .collect();
+        // TODO: works for now but inefficient!
+        let mut hl = SyntectHighlighter::new().extension("rs").build().unwrap();
+        self.text_lines = hl.highlight(lines.as_ref());
         self
-
-        // self.text_lines = lines
-        //     .into_iter()
-        //     .map(|s| vec![(s, tui::style::Style::default())])
-        //     .collect();
-        // self
     }
 
     pub fn styled_content(mut self, lines: Vec<StyledLine<'a>>) -> Self {
@@ -88,22 +72,18 @@ impl<'a> EditorRenderer<'a> {
                 lines_rendered,
                 anchor,
             }) => {
-                if state.focus_coord.ln >= lines_rendered.end
-                    && !lines_rendered.is_empty()
-                {
+                if lines_rendered.is_empty() {
+                    anchor
+                } else if state.focus_coord.ln >= lines_rendered.end {
                     Anchor::End(state.focus_coord.ln + 1)
-                } else if state.focus_coord.ln < lines_rendered.start
-                    && !lines_rendered.is_empty()
-                {
+                } else if state.focus_coord.ln < lines_rendered.start {
                     Anchor::Start(state.focus_coord.ln)
                 } else {
-                    // Anchor::Start(lines_rendered.start)
                     anchor
                 }
             }
             None => Anchor::Start(0),
         }
-        // Anchor::Center(state.focus_coord.ln)
     }
 }
 
@@ -118,9 +98,12 @@ impl<'a> StatefulWidget for EditorRenderer<'a> {
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let anchor = Self::compute_anchor(state);
+        let cursor_style = tui::style::Style::default()
+            .bg(Color::Black)
+            .fg(Color::White);
 
         // let eggshell = Color::Rgb(255, 239, 214);
-        let darkblue = Color::Rgb(0, 27, 46);
+        // let darkblue = Color::Rgb(0, 27, 46);
 
         let view = TextView::new()
             .styled_content(self.text_lines)
@@ -128,13 +111,11 @@ impl<'a> StatefulWidget for EditorRenderer<'a> {
             .on_render(|metadata| {
                 state.last_render = Some(metadata);
             })
-            .bg_color(darkblue)
+            // .bg_color(darkblue)
             .sparse_styling(
                 HashMap::<TextCoord, tui::style::Style>::from_iter(vec![(
                     TextCoord::new(state.focus_coord.ln, state.focus_coord.x),
-                    tui::style::Style::default()
-                        .bg(Color::White)
-                        .fg(Color::Black),
+                    cursor_style,
                 )]),
             );
         view.render(area, buf);
