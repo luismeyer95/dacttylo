@@ -220,7 +220,7 @@ impl<'a> TextView<'a> {
         rows
     }
 
-    /// Generates rows downwards and returns the first line nb that was not rendered along with the rows
+    /// Generates rows downwards and returns the line nb past the last rendered line along with the rows
     fn expand_rows_down(
         &self,
         start_ln: usize,

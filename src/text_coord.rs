@@ -9,3 +9,9 @@ impl TextCoord {
         Self { ln, x }
     }
 }
+
+impl From<(usize, usize)> for TextCoord {
+    fn from(coord: (usize, usize)) -> Self {
+        Self::new(coord.0, coord.1)
+    }
+}

@@ -52,11 +52,20 @@ impl<'txt> PlayerState<'txt> {
         self.last_input.clone()
     }
 
-    pub fn set_cursor(&mut self, pos: usize) -> Result<(), ()> {
+    pub fn set_cursor(&mut self, pos: usize) -> Result<(), &'static str> {
         if pos > self.text.len() {
-            Err(())
+            Err("cursor out of bounds")
         } else {
             self.pos = pos;
+            Ok(())
+        }
+    }
+
+    pub fn advance_cursor(&mut self, pos: usize) -> Result<(), &'static str> {
+        if pos >= self.text.len() {
+            Err("cursor out of bounds")
+        } else {
+            self.pos += 1;
             Ok(())
         }
     }
@@ -78,7 +87,8 @@ pub struct DacttyloGameState<'txt> {
 
 impl<'txt> DacttyloGameState<'txt> {
     pub fn new(main_player: &str, text: &'txt str) -> Self {
-        let mut players: HashMap<String, PlayerState<'txt>> = Default::default();
+        let mut players: HashMap<String, PlayerState<'txt>> =
+            Default::default();
         players.insert(main_player.to_string(), PlayerState::new(text));
 
         Self {
@@ -161,7 +171,8 @@ mod tests {
     #[test]
     fn multi() {
         let text = "Hi";
-        let mut game = DacttyloGameState::new("Luis", text).with_players(&["Agathe"]);
+        let mut game =
+            DacttyloGameState::new("Luis", text).with_players(&["Agathe"]);
 
         assert_eq!(
             game.process_input("Luis", 'H').unwrap(),

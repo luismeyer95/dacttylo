@@ -12,8 +12,11 @@ use dacttylo::events::ticker::TickerClient;
 use dacttylo::events::{ticker, TickEvent};
 use dacttylo::session;
 use libp2p::{identity, PeerId};
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 use std::error::Error;
 use std::io::Stdout;
+use std::time::Duration;
 use tokio::fs;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tui::backend::CrosstermBackend;
@@ -93,9 +96,18 @@ async fn run_app(
         Commands::Practice { file } => {
             text_contents = std::fs::read_to_string(file)?;
             DacttyloGameState::new("Luis", &text_contents)
+                .with_players(&["Agathe"])
         }
         _ => panic!("Command not supported yet"),
     };
+
+    let ticker = ticker_client.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            ticker.tick().await.unwrap();
+        }
+    });
 
     term.draw(|f| {
         f.render_widget(DacttyloWidget::new(&game_state), f.size());
@@ -105,7 +117,9 @@ async fn run_app(
         // dacttylo::utils::log(&format!("{:?}", event)).await;
 
         match event {
-            AppEvent::Tick => {}
+            AppEvent::Tick => {
+                // game_state.process_input("Agathe", c).unwrap();
+            }
             AppEvent::Session(_session_event) => {}
             AppEvent::Term(e) => {
                 if let Action::Quit = handle_term_event(

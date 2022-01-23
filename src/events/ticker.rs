@@ -1,5 +1,6 @@
 use crate::events::AppEvent;
 use std::{
+    error::Error,
     ops::Deref,
     pin::Pin,
     task::{Context, Poll},
@@ -17,17 +18,25 @@ pub fn new() -> (TickerClient, impl Stream<Item = TickEvent>) {
 #[derive(Debug, Clone, Copy)]
 pub struct TickEvent;
 
+#[derive(Debug, Clone)]
 pub struct TickerClient {
     tx: Sender<TickEvent>,
 }
 
-impl Deref for TickerClient {
-    type Target = Sender<TickEvent>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.tx
+impl TickerClient {
+    pub async fn tick(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        self.tx.send(TickEvent).await?;
+        Ok(())
     }
 }
+
+// impl Deref for TickerClient {
+//     type Target = Sender<TickEvent>;
+
+//     fn deref(&self) -> &Self::Target {
+//         &self.tx
+//     }
+// }
 
 impl From<TickEvent> for AppEvent {
     fn from(_: TickEvent) -> Self {
@@ -45,7 +54,7 @@ mod tests {
         let (client, mut stream) = new();
 
         tokio::spawn(async move {
-            client.send(TickEvent).await.unwrap();
+            client.tick().await.unwrap();
         });
 
         tokio::select! {
