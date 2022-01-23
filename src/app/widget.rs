@@ -1,4 +1,4 @@
-use crate::highlighting::Highlighter;
+use crate::highlighting::{Highlighter, NoOpHighlighter};
 use crate::utils::helpers;
 use crate::{
     highlighting::SyntectHighlighter,
@@ -12,31 +12,22 @@ use crate::app::InputResult;
 
 use super::state::DacttyloGameState;
 
-pub struct DacttyloWidget<'txt> {
+pub struct DacttyloWidget<'txt, 'hl> {
     game_state: &'txt DacttyloGameState<'txt>,
+    highlighter: &'hl dyn Highlighter,
 }
 
-impl<'txt> DacttyloWidget<'txt> {
+impl<'txt, 'hl> DacttyloWidget<'txt, 'hl> {
     pub fn new(game_state: &'txt DacttyloGameState) -> Self {
-        Self { game_state }
+        Self {
+            game_state,
+            highlighter: &NoOpHighlighter,
+        }
     }
 
-    pub fn styles_ugh(
-        &self,
-        map: HashMap<usize, Option<InputResult>>,
-        lines: &[&'txt str],
-    ) -> HashMap<TextCoord, Option<InputResult>> {
-        let mut player_tuples = map.into_iter().collect::<Vec<_>>();
-        player_tuples.sort_by(|(ca, _), (cb, _)| ca.cmp(cb));
-        let (indexes, inputs): (Vec<usize>, Vec<Option<InputResult>>) =
-            player_tuples.into_iter().unzip();
-        let coords = helpers::text_to_line_index(indexes, lines).unwrap();
-
-        coords
-            .into_iter()
-            .map(|c| c.into())
-            .zip(inputs)
-            .collect::<HashMap<_, _>>()
+    pub fn highlighter(mut self, highlighter: &'hl dyn Highlighter) -> Self {
+        self.highlighter = highlighter;
+        self
     }
 
     pub fn get_cursor_styles(
@@ -86,13 +77,12 @@ impl<'txt> DacttyloWidget<'txt> {
     }
 }
 
-impl<'txt> Widget for DacttyloWidget<'txt> {
+impl<'txt, 'hl> Widget for DacttyloWidget<'txt, 'hl> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let text_lines: Vec<&str> =
             self.game_state.text().split_inclusive('\n').collect();
 
-        let mut hl = SyntectHighlighter::new().extension("rs").build().unwrap();
-        let styled_lines = hl.highlight(text_lines.as_ref());
+        let styled_lines = self.highlighter.highlight(text_lines.as_ref());
 
         // let eggshell = Color::Rgb(255, 239, 214);
         // let darkblue = Color::Rgb(0, 27, 46);

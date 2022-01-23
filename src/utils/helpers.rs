@@ -1,5 +1,8 @@
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -9,6 +12,10 @@ pub fn is_valid_file(val: &str) -> Result<(), String> {
     } else {
         Err(format!("file `{}` does not exist.", val))
     }
+}
+
+pub fn get_extension_from_filename(filename: &str) -> Option<&str> {
+    Path::new(filename).extension().and_then(|s| s.to_str())
 }
 
 pub fn input_width(s: &str) -> usize {
@@ -51,7 +58,10 @@ pub fn text_to_line_index(
     Err("index out of bounds")
 }
 
-pub fn line_to_text_index(ln_index: usize, text_lines: Vec<&str>) -> Result<usize, &'static str> {
+pub fn line_to_text_index(
+    ln_index: usize,
+    text_lines: Vec<&str>,
+) -> Result<usize, &'static str> {
     if ln_index > text_lines.len() {
         Err("index out of bounds")
     } else {
@@ -71,7 +81,8 @@ mod tests {
 
     #[test]
     fn line_starts_ttli() {
-        let lines: Vec<&str> = vec!["Hello how are", "you today my", "good sir"];
+        let lines: Vec<&str> =
+            vec!["Hello how are", "you today my", "good sir"];
         let indexes = [0, 13, 25];
 
         let result = text_to_line_index(indexes, &lines).unwrap();
@@ -81,7 +92,8 @@ mod tests {
 
     #[test]
     fn edges_ttli() {
-        let lines: Vec<&str> = vec!["Hello how are", "you today my", "good sir"];
+        let lines: Vec<&str> =
+            vec!["Hello how are", "you today my", "good sir"];
         let indexes = [12, 24, 32];
 
         let result = text_to_line_index(indexes, &lines).unwrap();
@@ -91,7 +103,8 @@ mod tests {
 
     #[test]
     fn full_ttli() {
-        let lines: Vec<&str> = vec!["Hello how are", "you today my", "good sir"];
+        let lines: Vec<&str> =
+            vec!["Hello how are", "you today my", "good sir"];
         let indexes = lines
             .iter()
             .flat_map(|s| s.chars())
@@ -107,7 +120,8 @@ mod tests {
         println!("{:?}", result);
 
         for (lni, &ln) in lines.iter().enumerate() {
-            for (chi, _) in UnicodeSegmentation::graphemes(ln, true).enumerate() {
+            for (chi, _) in UnicodeSegmentation::graphemes(ln, true).enumerate()
+            {
                 assert_eq!(result.pop_front(), Some((lni, chi)));
             }
         }

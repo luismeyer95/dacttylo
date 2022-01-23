@@ -54,13 +54,6 @@ impl<'a> EditorRenderer<'a> {
         Self { text_lines: vec![] }
     }
 
-    pub fn content(mut self, lines: Vec<&'a str>) -> Self {
-        // TODO: works for now but inefficient!
-        let mut hl = SyntectHighlighter::new().extension("rs").build().unwrap();
-        self.text_lines = hl.highlight(lines.as_ref());
-        self
-    }
-
     pub fn styled_content(mut self, lines: Vec<StyledLine<'a>>) -> Self {
         self.text_lines = lines;
         self

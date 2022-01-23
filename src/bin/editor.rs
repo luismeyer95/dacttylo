@@ -3,6 +3,8 @@
 use dacttylo::{
     editor_state::{Cursor, EditorState},
     editor_view::{EditorRenderer, EditorViewState},
+    highlighting::{Highlighter, SyntectHighlighter},
+    utils::types::AsyncResult,
 };
 
 #[allow(unused_imports)]
@@ -60,10 +62,11 @@ fn typebox_app() -> Result<(), Box<dyn Error>> {
 fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     tick_rate: Duration,
-) -> Result<(), Box<dyn Error>> {
+) -> AsyncResult<()> {
     let mut last_tick = Instant::now();
 
-    let text_content = match std::env::args().nth(1) {
+    let filepath = std::env::args().nth(1);
+    let text_content = match &filepath {
         Some(filepath) => std::fs::read_to_string(&filepath)?,
         None => "".into(),
     };
@@ -71,8 +74,15 @@ fn run_app<B: Backend>(
     let mut editor = EditorState::new().content(&text_content);
     let mut editor_view = EditorViewState::new();
 
+    let mut hl_builder = SyntectHighlighter::new()
+        .theme("base16-mocha.dark")
+        .file(filepath)?;
+
     loop {
-        let renderer = EditorRenderer::new().content(editor.get_lines());
+        let lines = editor.get_lines();
+        let renderer = EditorRenderer::new()
+            .styled_content(hl_builder.clone().build()?.highlight(&lines));
+
         editor_view.focus(editor.get_cursor());
 
         terminal.draw(|f| {

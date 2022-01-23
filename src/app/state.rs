@@ -61,8 +61,8 @@ impl<'txt> PlayerState<'txt> {
         }
     }
 
-    pub fn advance_cursor(&mut self, pos: usize) -> Result<(), &'static str> {
-        if pos >= self.text.len() {
+    pub fn advance_cursor(&mut self) -> Result<(), &'static str> {
+        if self.pos >= self.text.len() {
             Err("cursor out of bounds")
         } else {
             self.pos += 1;
@@ -123,6 +123,20 @@ impl<'txt> DacttyloGameState<'txt> {
             .ok_or("Played already reached the end")?;
 
         Ok(input_result)
+    }
+
+    pub fn advance_player(
+        &mut self,
+        username: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        let player = self
+            .players
+            .get_mut(username)
+            .ok_or("Player does not exist")?;
+
+        player.advance_cursor()?;
+
+        Ok(())
     }
 
     pub fn player(&self, username: &str) -> Option<&PlayerState> {

@@ -1,36 +1,42 @@
+use crate::utils::types::AsyncResult;
+
 use super::highlighter::Highlighter;
 use once_cell::sync::OnceCell;
+use std::cell::RefCell;
 use std::error::Error;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
-use syntect::parsing::SyntaxSet;
+use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 /// An implementation using the syntect highlighting engine
 pub struct SyntectHighlighter {
     syntax_set: &'static SyntaxSet,
-    highlighter: HighlightLines<'static>,
+    highlighter: RefCell<HighlightLines<'static>>,
 }
 
 #[allow(clippy::new_ret_no_self)]
 impl SyntectHighlighter {
-    pub fn new() -> SyntectHighlighterBuilder {
+    pub fn new() -> SyntectHighlighterBuilder<'static> {
         Default::default()
     }
 }
 
 impl Highlighter for SyntectHighlighter {
     fn highlight<'txt>(
-        &mut self,
+        &self,
         lines: &[&'txt str],
     ) -> Vec<Vec<(&'txt str, tui::style::Style)>> {
         lines.iter().map(|ln| self.highlight_line(ln)).collect()
     }
 
     fn highlight_line<'txt>(
-        &mut self,
+        &self,
         line: &'txt str,
     ) -> Vec<(&'txt str, tui::style::Style)> {
-        let tokens = self.highlighter.highlight(line, self.syntax_set);
+        let tokens = self
+            .highlighter
+            .borrow_mut()
+            .highlight(line, self.syntax_set);
         tokens
             .into_iter()
             .map(|(style, token)| (token, syntect_to_tui_style(style)))
@@ -77,21 +83,23 @@ fn syntect_to_tui_style(
 }
 
 #[derive(Debug, Clone)]
-pub struct SyntectHighlighterBuilder {
-    extension: String,
+pub struct SyntectHighlighterBuilder<'stx> {
+    syntax: &'stx SyntaxReference,
     theme: String,
 }
 
-impl Default for SyntectHighlighterBuilder {
+impl<'stx> Default for SyntectHighlighterBuilder<'stx> {
     fn default() -> Self {
+        let (syntax_set, _) = load_defaults();
+
         Self {
-            extension: Default::default(),
-            theme: Self::DEFAULT_THEMES[1].into(),
+            syntax: syntax_set.find_syntax_plain_text(),
+            theme: Self::DEFAULT_THEMES[0].into(),
         }
     }
 }
 
-impl SyntectHighlighterBuilder {
+impl<'stx> SyntectHighlighterBuilder<'stx> {
     const DEFAULT_THEMES: [&'static str; 7] = [
         "Solarized (dark)",
         "Solarized (light)",
@@ -102,9 +110,19 @@ impl SyntectHighlighterBuilder {
         "InspiredGitHub",
     ];
 
-    pub fn extension(mut self, ext: impl Into<String>) -> Self {
-        self.extension = ext.into();
-        self
+    pub fn file<T>(mut self, file: Option<T>) -> AsyncResult<Self>
+    where
+        T: AsRef<str>,
+    {
+        if let Some(file) = file {
+            let (syntax_set, _) = load_defaults();
+            self.syntax = syntax_set
+                .find_syntax_for_file(file.as_ref())
+                .map_err(|_| "error reading file")?
+                .ok_or("failed to load syntax for file")?;
+        }
+
+        Ok(self)
     }
 
     pub fn theme(mut self, theme: impl Into<String>) -> Self {
@@ -112,18 +130,15 @@ impl SyntectHighlighterBuilder {
         self
     }
 
-    pub fn build(self) -> Result<SyntectHighlighter, Box<dyn Error>> {
+    pub fn build(self) -> AsyncResult<SyntectHighlighter> {
         let (syntax_set, theme_set) = load_defaults();
-        let syntax = syntax_set
-            .find_syntax_by_extension(&self.extension)
-            .ok_or("syntax extension not found")?;
 
         let highlighter =
-            HighlightLines::new(syntax, &theme_set.themes[&self.theme]);
+            HighlightLines::new(self.syntax, &theme_set.themes[&self.theme]);
 
         Ok(SyntectHighlighter {
             syntax_set,
-            highlighter,
+            highlighter: RefCell::new(highlighter),
         })
     }
 }
