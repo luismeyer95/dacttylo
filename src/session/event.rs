@@ -7,7 +7,7 @@ use std::{
 
 use crate::{events::AppEvent, network::NetEvent};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SessionEvent {
     TopicMessage {
         source: PeerId,

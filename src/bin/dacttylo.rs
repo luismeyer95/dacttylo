@@ -1,122 +1,186 @@
-#![allow(dead_code, unused, clippy::new_without_default)]
+// #![allow(unused)]
 
+use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::execute;
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
+    LeaveAlternateScreen,
+};
+use dacttylo::app::state::DacttyloGameState;
+use dacttylo::app::widget::DacttyloWidget;
+use dacttylo::events::ticker::TickerClient;
+use dacttylo::events::{ticker, TickEvent};
+use dacttylo::session;
+use libp2p::{identity, PeerId};
+use std::error::Error;
+use std::io::Stdout;
+use tokio::fs;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tui::backend::CrosstermBackend;
+use tui::Terminal;
+
+use dacttylo::cli::Commands;
+use dacttylo::events::event_aggregator::EventAggregator;
 use dacttylo::{
-    editor_state::{Cursor, EditorState},
-    editor_view::{EditorRenderer, EditorViewState},
+    self, aggregate,
+    events::AppEvent,
+    network::{self},
+    session::SessionClient,
 };
+use tokio_stream::StreamExt;
 
-#[allow(unused_imports)]
-use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute,
-    terminal::{
-        disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
-        LeaveAlternateScreen,
-    },
-};
+type AsyncResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
-use std::{
-    error::Error,
-    io,
-    time::{Duration, Instant},
-};
-use tui::{
-    backend::{Backend, CrosstermBackend},
-    Terminal,
-};
-
-fn main() -> Result<(), Box<dyn Error>> {
-    typebox_app()
+enum Action {
+    Ok,
+    Quit,
 }
 
-fn typebox_app() -> Result<(), Box<dyn Error>> {
-    // setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+#[tokio::main]
+async fn main() -> AsyncResult<()> {
+    dacttylo::cli::parse();
 
-    // create app and run it
-    let tick_rate = Duration::from_millis(500);
-    let res = run_app(&mut terminal, tick_rate);
-
-    // restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
-    if let Err(err) = res {
-        eprintln!("Error: {:?}", err)
+    if let Err(e) = setup_term().await {
+        eprintln!("Error: {}", e);
     }
 
     Ok(())
 }
 
-fn run_app<B: Backend>(
-    terminal: &mut Terminal<B>,
-    tick_rate: Duration,
-) -> Result<(), Box<dyn Error>> {
-    let mut last_tick = Instant::now();
+async fn setup_term() -> AsyncResult<()> {
+    let mut term = enter_tui_mode(std::io::stdout())?;
+    init_app(&mut term).await?;
+    leave_tui_mode(term)?;
 
-    let text_content = match std::env::args().nth(1) {
-        Some(filepath) => std::fs::read_to_string(&filepath)?,
-        None => "".into(),
+    Ok(())
+}
+
+async fn init_app(
+    term: &mut Terminal<CrosstermBackend<Stdout>>,
+) -> AsyncResult<()> {
+    let id_keys = identity::Keypair::generate_ed25519();
+    let peer_id = PeerId::from(id_keys.public());
+
+    // println!("Local peer id: {:?}", peer_id);
+
+    let (p2p_client, p2p_stream, p2p_task) =
+        network::new(id_keys.clone()).await?;
+    // Running the P2P task in the background
+    tokio::spawn(p2p_task.run());
+
+    let (session_client, session_stream) = session::new(p2p_client, p2p_stream);
+    let (ticker_client, ticker_stream) = ticker::new();
+    let term_io_stream = crossterm::event::EventStream::new();
+
+    let global_stream =
+        aggregate!([ticker_stream, term_io_stream, session_stream] as AppEvent);
+
+    run_app(term, global_stream, session_client, ticker_client).await?;
+
+    Ok(())
+}
+
+async fn run_app(
+    term: &mut Terminal<CrosstermBackend<Stdout>>,
+    mut global_stream: EventAggregator<AppEvent>,
+    session_client: SessionClient,
+    ticker_client: TickerClient,
+) -> AsyncResult<()> {
+    let cli = dacttylo::cli::parse();
+    let text_contents: String;
+
+    let mut game_state = match cli.command {
+        Commands::Practice { file } => {
+            text_contents = std::fs::read_to_string(file)?;
+            DacttyloGameState::new("Luis", &text_contents)
+        }
+        _ => panic!("Command not supported yet"),
     };
 
-    let mut editor = EditorState::new().content(&text_content);
-    let mut editor_view = EditorViewState::new();
+    term.draw(|f| {
+        f.render_widget(DacttyloWidget::new(&game_state), f.size());
+    })?;
 
-    loop {
-        let renderer = EditorRenderer::new().content(editor.get_lines());
-        editor_view.focus(editor.get_cursor());
+    while let Some(event) = global_stream.next().await {
+        // dacttylo::utils::log(&format!("{:?}", event)).await;
 
-        terminal.draw(|f| {
-            f.render_stateful_widget(renderer, f.size(), &mut editor_view);
-        })?;
-
-        let timeout = tick_rate
-            .checked_sub(last_tick.elapsed())
-            .unwrap_or_else(|| Duration::from_secs(0));
-        if crossterm::event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Esc => return Ok(()),
-                    KeyCode::Enter => {
-                        // editor.insert_ln();
-                        // editor.move_cursor(Cursor::Down);
-                        editor.insert_ch('\n');
-                        editor.offset(1);
-                    }
-                    KeyCode::Tab => {
-                        editor.insert_ch('\t');
-                        editor.offset(1);
-                    }
-                    KeyCode::Char(c) => {
-                        editor.insert_ch(c);
-                        editor.offset(1);
-                    }
-                    KeyCode::Backspace => {
-                        if editor.offset(-1).is_some() {
-                            editor.delete_ch();
-                        }
-                    }
-                    KeyCode::Up => editor.move_cursor(Cursor::Up),
-                    KeyCode::Down => editor.move_cursor(Cursor::Down),
-                    KeyCode::Left => editor.move_cursor(Cursor::Left),
-                    KeyCode::Right => editor.move_cursor(Cursor::Right),
-                    _ => {}
+        match event {
+            AppEvent::Tick => {}
+            AppEvent::Session(_session_event) => {}
+            AppEvent::Term(e) => {
+                if let Action::Quit = handle_term_event(
+                    e.unwrap(),
+                    &ticker_client,
+                    &mut game_state,
+                )
+                .await
+                {
+                    return Ok(());
                 }
             }
         }
-        if last_tick.elapsed() >= tick_rate {
-            // do sth with tick event
-            // typebox_state.on_tick();
-            last_tick = Instant::now();
-        }
+
+        term.draw(|f| {
+            f.render_widget(DacttyloWidget::new(&game_state), f.size());
+        })?;
     }
+
+    Ok(())
+}
+
+async fn handle_term_event(
+    term_event: Event,
+    ticker_client: &TickerClient,
+    game_state: &mut DacttyloGameState<'_>,
+) -> Action {
+    if let Event::Key(event) = term_event {
+        let KeyEvent { code, .. } = event;
+        match code {
+            KeyCode::Char(c) => {
+                game_state.process_input("Luis", c).unwrap();
+            }
+            KeyCode::Enter => {
+                game_state.process_input("Luis", '\n').unwrap();
+                // ticker_client.send(TickEvent).await.unwrap();
+            }
+            KeyCode::Tab => {
+                game_state.process_input("Luis", '\t').unwrap();
+                // ticker_client.send(TickEvent).await.unwrap();
+            }
+            KeyCode::Esc => return Action::Quit,
+            _ => {}
+        };
+    }
+
+    Action::Ok
+}
+
+fn enter_tui_mode<T>(
+    mut writer: T,
+) -> AsyncResult<Terminal<CrosstermBackend<T>>>
+where
+    T: std::io::Write,
+{
+    enable_raw_mode()?;
+
+    execute!(writer, EnterAlternateScreen)?;
+
+    let backend = CrosstermBackend::new(writer);
+    let terminal = Terminal::new(backend)?;
+    Ok(terminal)
+}
+
+fn leave_tui_mode<T>(
+    mut terminal: Terminal<CrosstermBackend<T>>,
+) -> AsyncResult<()>
+where
+    T: std::io::Write,
+{
+    disable_raw_mode()?;
+
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+
+    terminal.show_cursor()?;
+
+    Ok(())
 }
