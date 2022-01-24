@@ -75,7 +75,7 @@ fn run_app<B: Backend>(
     let mut editor_view = EditorViewState::new();
 
     let mut hl_builder = SyntectHighlighter::new()
-        .theme("base16-mocha.dark")
+        .theme("Solarized (dark)")
         .file(filepath)?;
 
     loop {

@@ -14,7 +14,8 @@ use dacttylo::{
         types::Action,
     },
 };
-use std::io::Stdout;
+use rand::Rng;
+use std::{io::Stdout, time::Duration};
 use tokio_stream::StreamExt;
 use tui::{backend::CrosstermBackend, Terminal};
 
@@ -59,9 +60,20 @@ async fn run_practice_session(
         .with_players(&["Agathe"]);
     ticker_client.tick().await?;
 
+    let ticker = ticker_client.clone();
+    tokio::spawn(async move {
+        loop {
+            let rd = rand::thread_rng().gen_range(100..700);
+            tokio::time::sleep(Duration::from_millis(rd)).await;
+            ticker.tick().await.unwrap();
+        }
+    });
+
     while let Some(event) = global_stream.next().await {
         match event {
-            AppEvent::Tick => {}
+            AppEvent::Tick => {
+                game_state.advance_player("Agathe").unwrap();
+            }
             AppEvent::Session(_session_event) => {}
             AppEvent::Term(e) => {
                 if let Action::Quit =

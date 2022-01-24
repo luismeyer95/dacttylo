@@ -1,4 +1,6 @@
-use crate::text_coord::TextCoord;
+use unicode_width::UnicodeWidthStr;
+
+use crate::{text_coord::TextCoord, utils::helpers::StrGraphemesExt};
 use std::cmp::min;
 
 pub enum Cursor {
@@ -49,7 +51,10 @@ impl EditorState {
                 );
             }
             Cursor::Down => {
-                self.cursor.ln = min(self.cursor.ln.saturating_add(1), self.text_lines.len() - 1);
+                self.cursor.ln = min(
+                    self.cursor.ln.saturating_add(1),
+                    self.text_lines.len() - 1,
+                );
                 self.cursor.x = min(
                     self.cursor.x,
                     Self::nl_stripped_len(&self.text_lines[self.cursor.ln]),
@@ -65,18 +70,11 @@ impl EditorState {
         }
     }
 
-    #[allow(unused)]
-    fn char_at(&self, coord: TextCoord) -> Option<char> {
-        self.text_lines
-            .get(coord.ln)
-            .and_then(|ln| ln.chars().nth(coord.x))
-    }
-
     fn nl_stripped_len(s: &str) -> usize {
         if s.ends_with('\n') {
-            s.len() - 1
+            s.len_graphemes() - 1
         } else {
-            s.len()
+            s.len_graphemes()
         }
     }
 
@@ -91,25 +89,36 @@ impl EditorState {
         Some(self.cursor.clone())
     }
 
-    fn offset_pos(&self, mut offset: usize, mut coord: TextCoord) -> Option<TextCoord> {
+    fn offset_pos(
+        &self,
+        mut offset: usize,
+        mut coord: TextCoord,
+    ) -> Option<TextCoord> {
         let mut ln = self.text_lines.get(coord.ln)?;
+        let mut ln_len = ln.len_graphemes();
+
         let mut next_ln = self.text_lines.get(coord.ln + 1);
-        while offset >= ln.len() - coord.x {
+        while offset >= ln_len - coord.x {
             // handling the special case for the last line end-of-line cursor
-            if next_ln == None && offset == ln.len() - coord.x {
+            if next_ln == None && offset == ln_len - coord.x {
                 break;
             }
-            offset -= ln.len() - coord.x;
+            offset -= ln_len - coord.x;
             coord.ln += 1;
             coord.x = 0;
             ln = next_ln?;
+            ln_len = ln.len_graphemes();
             next_ln = self.text_lines.get(coord.ln + 1);
         }
         coord.x += offset;
         Some(coord)
     }
 
-    fn offset_neg(&self, mut offset: usize, mut coord: TextCoord) -> Option<TextCoord> {
+    fn offset_neg(
+        &self,
+        mut offset: usize,
+        mut coord: TextCoord,
+    ) -> Option<TextCoord> {
         let mut ln;
         while offset > coord.x {
             offset -= coord.x + 1;
@@ -117,7 +126,7 @@ impl EditorState {
             coord.ln -= 1;
             // if a previous line exists, it is not the last line therefore it must
             // have a trailing newline and a minimum length of 1
-            coord.x = ln.len() - 1;
+            coord.x = ln.len_graphemes() - 1;
         }
         coord.x -= offset;
         Some(coord)
@@ -127,12 +136,17 @@ impl EditorState {
         let ln = &mut self.text_lines[self.cursor.ln];
         match c {
             '\n' => {
-                let x = self.cursor.x;
+                let x = ln.index_graphemes(self.cursor.x);
                 let carry = ln[x..].to_string();
                 ln.replace_range(x.., "\n");
-                self.text_lines.insert(self.cursor.ln + 1, carry)
+                self.text_lines.insert(self.cursor.ln + 1, carry);
             }
-            _ => ln.insert(self.cursor.x, c),
+            _ => {
+                let insert_point = ln.index_graphemes(self.cursor.x);
+                ln.insert(insert_point, c);
+
+                // ln.insert(self.cursor.x, c);
+            }
         }
     }
 
@@ -142,10 +156,14 @@ impl EditorState {
             Some('\n') => {
                 // assumes presence of newline guarantees this line isn't the last
                 let ln_below = self.text_lines.remove(self.cursor.ln + 1);
-                self.text_lines[self.cursor.ln].replace_range(self.cursor.x.., &ln_below);
+                let ln = &mut self.text_lines[self.cursor.ln];
+                let rm_point = ln.index_graphemes(self.cursor.x);
+                ln.replace_range(rm_point.., &ln_below);
             }
             Some(_) => {
-                self.text_lines[self.cursor.ln].remove(self.cursor.x);
+                let ln = &mut self.text_lines[self.cursor.ln];
+                let rm_point = ln.index_graphemes(self.cursor.x);
+                ln.remove(rm_point);
             }
             None => {}
         };

@@ -1,0 +1,80 @@
+   Compiling dacttylo v0.1.0 (/Users/luismeyer/Desktop/repos/ttypebox)
+warning: unused import: `highlighting::SyntectHighlighter`
+ --> src/app/widget.rs:4:5
+  |
+4 |     highlighting::SyntectHighlighter,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `unicode_width::UnicodeWidthStr`
+ --> src/editor_state.rs:1:5
+  |
+1 | use unicode_width::UnicodeWidthStr;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::highlighting::Highlighter`
+ --> src/editor_view.rs:1:5
+  |
+1 | use crate::highlighting::Highlighter;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `highlighting::SyntectHighlighter`
+ --> src/editor_view.rs:4:5
+  |
+4 |     highlighting::SyntectHighlighter,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Context`, `Poll`, `ops::Deref`, `pin::Pin`
+ --> src/events/ticker.rs:4:5
+  |
+4 |     ops::Deref,
+  |     ^^^^^^^^^^
+5 |     pin::Pin,
+  |     ^^^^^^^^
+6 |     task::{Context, Poll},
+  |            ^^^^^^^  ^^^^
+
+warning: unused import: `std::error::Error`
+ --> src/highlighting/syntect.rs:6:5
+  |
+6 | use std::error::Error;
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `PeerRecord`, `Record`
+ --> src/session/client.rs:5:24
+  |
+5 |     kad::{record::Key, PeerRecord, Record},
+  |                        ^^^^^^^^^^  ^^^^^^
+
+warning: unused import: `futures::Stream`
+ --> src/session/event.rs:1:5
+  |
+1 | use futures::Stream;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused imports: `Context`, `Poll`, `pin::Pin`
+ --> src/session/event.rs:4:5
+  |
+4 |     pin::Pin,
+  |     ^^^^^^^^
+5 |     task::{Context, Poll},
+  |            ^^^^^^^  ^^^^
+
+warning: unused imports: `HashMap`, `HashSet`
+ --> src/utils/helpers.rs:3:19
+  |
+3 |     collections::{HashMap, HashSet},
+  |                   ^^^^^^^  ^^^^^^^
+
+warning: unreachable pattern
+   --> src/text_view.rs:150:13
+    |
+150 |             _ => panic!("Disabled anchors"),
+    |             ^
+    |
+    = note: `#[warn(unreachable_patterns)]` on by default
+
+warning: `dacttylo` (lib) generated 11 warnings
+    Finished dev [unoptimized + debuginfo] target(s) in 2.25s
+     Running `target/debug/editor textfiles/unicode.txt`

@@ -14,6 +14,27 @@ pub fn is_valid_file(val: &str) -> Result<(), String> {
     }
 }
 
+pub trait StrGraphemesExt {
+    fn index_graphemes(self, idx: usize) -> usize;
+    fn len_graphemes(self) -> usize;
+}
+
+impl<T> StrGraphemesExt for T
+where
+    T: AsRef<str>,
+{
+    fn index_graphemes(self, idx: usize) -> usize {
+        UnicodeSegmentation::graphemes(self.as_ref(), true)
+            .take(idx)
+            .flat_map(|c| c.chars().map(|c| c.len_utf8()))
+            .sum()
+    }
+
+    fn len_graphemes(self) -> usize {
+        UnicodeSegmentation::graphemes(self.as_ref(), true).count()
+    }
+}
+
 pub fn get_extension_from_filename(filename: &str) -> Option<&str> {
     Path::new(filename).extension().and_then(|s| s.to_str())
 }
