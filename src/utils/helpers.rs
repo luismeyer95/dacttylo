@@ -67,14 +67,14 @@ pub fn text_to_line_index(
     let mut coords: Vec<(usize, usize)> = vec![];
 
     for (i, &line) in text_lines.iter().enumerate() {
-        let ln_width = input_width(line);
+        let ln_len = line.len_graphemes();
         let (matched, remainder): (Vec<usize>, Vec<usize>) =
-            indexes.into_iter().partition(|&idx| idx < ln_width);
+            indexes.into_iter().partition(|&idx| idx < ln_len);
         coords.extend(matched.into_iter().map(|idx| (i, idx)));
         if coords.len() == size {
             return Ok(coords);
         }
-        indexes = remainder.into_iter().map(|idx| idx - ln_width).collect();
+        indexes = remainder.into_iter().map(|idx| idx - ln_len).collect();
     }
     Err("index out of bounds")
 }

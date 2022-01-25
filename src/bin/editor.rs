@@ -3,7 +3,7 @@
 use dacttylo::{
     editor_state::{Cursor, EditorState},
     editor_view::{EditorRenderer, EditorViewState},
-    highlighting::{Highlighter, SyntectHighlighter},
+    highlighting::{Highlighter, NoOpHighlighter, SyntectHighlighter},
     utils::types::AsyncResult,
 };
 
@@ -81,7 +81,8 @@ fn run_app<B: Backend>(
     loop {
         let lines = editor.get_lines();
         let renderer = EditorRenderer::new()
-            .styled_content(hl_builder.clone().build()?.highlight(&lines));
+            // .styled_content(hl_builder.clone().build()?.highlight(&lines));
+            .styled_content(NoOpHighlighter.highlight(&lines));
 
         editor_view.focus(editor.get_cursor());
 

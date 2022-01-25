@@ -284,7 +284,6 @@ impl<'a> TextView<'a> {
     fn line_to_rows(
         &self,
         line_nb: usize,
-        // line: &[(&'txt str, tui::style::Style)],
         width: u16,
     ) -> Vec<Vec<StyledGrapheme<'_>>> {
         let line = self.text_lines[line_nb].as_slice();

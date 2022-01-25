@@ -1,7 +1,14 @@
-use crate::line_processor::LineProcessor;
+use crate::{
+    line_processor::LineProcessor,
+    utils::{
+        helpers::StrGraphemesExt,
+        reflow::{LineComposer, WordWrapper},
+    },
+};
 use std::collections::HashMap;
 use tui::text::StyledGrapheme;
 use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 pub struct LineStylizer;
 
@@ -34,19 +41,22 @@ impl LineStylizer {
             style: Default::default(),
         });
 
-        let mut inline_offset = 0;
+        let mut column_offset = 0;
         let mut transformed_line: Vec<StyledGrapheme> = vec![];
 
         for (key_offset, gphm) in graphemes.into_iter().enumerate() {
-            let remapped_key = Self::remap_symbol(inline_offset, gphm.clone());
+            let remapped_key = Self::remap_symbol(column_offset, gphm);
             let styled_key = Self::apply_sparse_styling(
                 key_offset,
                 remapped_key,
                 &sparse_styling,
             );
-            let size = styled_key.len();
+            let column_size: usize =
+                styled_key.iter().map(|k| k.symbol.width()).sum();
+            // let column_size = styled_key.len();
+
             transformed_line.extend(styled_key);
-            inline_offset += size;
+            column_offset += column_size;
         }
 
         Self::prefix_line(transformed_line)
@@ -96,11 +106,55 @@ impl LineStylizer {
         graphemes: Vec<StyledGrapheme>,
         width: u16,
     ) -> Vec<Vec<StyledGrapheme>> {
-        graphemes
-            .chunks((width) as usize)
-            .map(|x| x.to_vec())
-            .collect()
+        let mut rows: Vec<Vec<StyledGrapheme>> = Vec::with_capacity(16);
+        let mut cur_row: Vec<StyledGrapheme> = Vec::with_capacity(16);
+        let mut cur_row_width = 0usize;
+
+        for g in graphemes {
+            let sym_width = g.symbol.width();
+            if sym_width + cur_row_width > width as usize {
+                rows.push(cur_row);
+                cur_row = vec![];
+                cur_row_width = 0;
+            }
+            cur_row.push(g);
+            cur_row_width += sym_width;
+        }
+
+        if !cur_row.is_empty() {
+            rows.push(cur_row);
+        }
+
+        rows
     }
+
+    // fn wrap_line(
+    //     graphemes: Vec<StyledGrapheme>,
+    //     width: u16,
+    // ) -> Vec<Vec<StyledGrapheme>> {
+    //     graphemes
+    //         .chunks((width) as usize)
+    //         .map(|x| x.to_vec())
+    //         .collect()
+    // }
+
+    // fn wrap_line(
+    //     graphemes: Vec<StyledGrapheme>,
+    //     width: u16,
+    // ) -> Vec<Vec<StyledGrapheme>> {
+    //     // use tui::widgets::Paragraph;
+    //     let mut gphm_iter = graphemes.into_iter();
+    //     let mut ln_wrapper: Box<dyn LineComposer> =
+    //         Box::new(WordWrapper::new(&mut gphm_iter, width, false));
+
+    //     let mut rows: Vec<Vec<StyledGrapheme>> = Vec::with_capacity(16);
+
+    //     while let Some((current_line, _)) = ln_wrapper.next_line() {
+    //         rows.push(current_line.into());
+    //     }
+
+    //     rows
+    // }
 
     fn remap_symbol(
         inline_index: usize,
@@ -115,9 +169,9 @@ impl LineStylizer {
 
     fn remap_tab(
         grapheme: StyledGrapheme,
-        inline_index: usize,
+        column_index: usize,
     ) -> Vec<StyledGrapheme> {
-        let tab_width = (4 - inline_index % 4) as u8;
+        let tab_width = (4 - column_index % 4) as u8;
         let style = grapheme
             .style
             .patch(tui::style::Style::default().fg(tui::style::Color::Yellow));

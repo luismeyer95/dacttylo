@@ -35,11 +35,13 @@ warning: unused imports: `Context`, `Poll`, `ops::Deref`, `pin::Pin`
 6 |     task::{Context, Poll},
   |            ^^^^^^^  ^^^^
 
-warning: unused import: `std::error::Error`
- --> src/highlighting/syntect.rs:6:5
+warning: unused imports: `LineComposer`, `WordWrapper`, `helpers::StrGraphemesExt`
+ --> src/line_stylizer.rs:4:9
   |
-6 | use std::error::Error;
-  |     ^^^^^^^^^^^^^^^^^
+4 |         helpers::StrGraphemesExt,
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^
+5 |         reflow::{LineComposer, WordWrapper},
+  |                  ^^^^^^^^^^^^  ^^^^^^^^^^^
 
 warning: unused imports: `PeerRecord`, `Record`
  --> src/session/client.rs:5:24
@@ -76,5 +78,5 @@ warning: unreachable pattern
     = note: `#[warn(unreachable_patterns)]` on by default
 
 warning: `dacttylo` (lib) generated 11 warnings
-    Finished dev [unoptimized + debuginfo] target(s) in 2.25s
-     Running `target/debug/editor textfiles/unicode.txt`
+    Finished dev [unoptimized + debuginfo] target(s) in 3.36s
+     Running `target/debug/editor`

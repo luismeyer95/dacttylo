@@ -3,7 +3,6 @@ use crate::utils::types::AsyncResult;
 use super::highlighter::Highlighter;
 use once_cell::sync::OnceCell;
 use std::cell::RefCell;
-use std::error::Error;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
