@@ -31,6 +31,7 @@ impl EditorState {
 
     pub fn content(mut self, text: &str) -> Self {
         let mut lines = text
+            // TODO: handle \r\n
             .split_inclusive("\n")
             .map(|s| s.to_string())
             .collect::<Vec<String>>();

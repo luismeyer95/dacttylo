@@ -1,7 +1,9 @@
 #![allow(clippy::new_without_default)]
+#![allow(dead_code, unused)]
 
 pub mod app;
 pub mod cli;
+pub mod editor;
 pub mod editor_state;
 pub mod editor_view;
 pub mod events;

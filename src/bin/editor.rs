@@ -76,10 +76,9 @@ fn run_app<B: Backend>(
         .file(filepath)?;
 
     loop {
-        let lines = editor.get_lines();
         let renderer = EditorRenderer::new()
             // .styled_content(hl_builder.clone().build()?.highlight(&lines));
-            .styled_content(NoOpHighlighter.highlight(&lines));
+            .styled_content(NoOpHighlighter.highlight(&editor.get_lines()));
 
         editor_view.focus(editor.get_cursor());
 
