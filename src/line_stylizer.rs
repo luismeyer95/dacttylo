@@ -1,7 +1,7 @@
 use crate::{
     line_processor::LineProcessor,
     utils::{
-        helpers::StrGraphemesExt,
+        log,
         reflow::{LineComposer, WordWrapper},
     },
 };
@@ -63,18 +63,20 @@ impl LineStylizer {
     }
 
     fn prefix_line(ln: Vec<StyledGrapheme>) -> Vec<StyledGrapheme> {
-        let mut prefixed = vec![
-            StyledGrapheme {
-                symbol: "~",
-                style: Default::default(),
-            },
-            StyledGrapheme {
-                symbol: " ",
-                style: Default::default(),
-            },
-        ];
-        prefixed.extend(ln);
-        prefixed
+        // let mut prefixed = vec![
+        //     StyledGrapheme {
+        //         symbol: "~",
+        //         style: Default::default(),
+        //     },
+        //     StyledGrapheme {
+        //         symbol: " ",
+        //         style: Default::default(),
+        //     },
+        // ];
+        // prefixed.extend(ln);
+        // prefixed
+
+        ln
     }
 
     fn tokens_to_graphemes<'tkn>(

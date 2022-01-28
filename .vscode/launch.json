@@ -31,12 +31,12 @@
             "request": "launch",
             "name": "Debug executable 'dacttylo'",
             "cargo": {
-                "args": ["build", "--bin=events_test", "--package=dacttylo"],
+                "args": ["build", "--bin=dacttylo", "--package=dacttylo"],
                 "filter": {
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "args": ["practice", "-f", "textfiles/gut.txt"],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "internalConsoleOptions": "openOnFirstSessionStart"

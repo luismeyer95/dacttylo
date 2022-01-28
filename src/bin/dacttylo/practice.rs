@@ -60,19 +60,19 @@ async fn run_practice_session(
         .with_players(&["Agathe"]);
     ticker_client.tick().await?;
 
-    let ticker = ticker_client.clone();
-    tokio::spawn(async move {
-        loop {
-            let rd = rand::thread_rng().gen_range(100..700);
-            tokio::time::sleep(Duration::from_millis(rd)).await;
-            ticker.tick().await.unwrap();
-        }
-    });
+    // let ticker = ticker_client.clone();
+    // tokio::spawn(async move {
+    //     loop {
+    //         let rd = rand::thread_rng().gen_range(100..700);
+    //         tokio::time::sleep(Duration::from_millis(rd)).await;
+    //         ticker.tick().await.unwrap();
+    //     }
+    // });
 
     while let Some(event) = global_stream.next().await {
         match event {
             AppEvent::Tick => {
-                game_state.advance_player("Agathe").unwrap();
+                // game_state.advance_player("Agathe").unwrap();
             }
             AppEvent::Session(_session_event) => {}
             AppEvent::Term(e) => {

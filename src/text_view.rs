@@ -13,6 +13,8 @@ use tui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+use tui::widgets::Paragraph;
+
 type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;
 
 pub enum Anchor {

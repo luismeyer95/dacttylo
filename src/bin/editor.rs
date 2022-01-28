@@ -1,10 +1,11 @@
 #![allow(dead_code, unused, clippy::new_without_default)]
 
+use crossterm::cursor::{EnableBlinking, Show};
 use dacttylo::{
     editor_state::{Cursor, EditorState},
     editor_view::{EditorRenderer, EditorViewState},
     highlighting::{Highlighter, NoOpHighlighter, SyntectHighlighter},
-    utils::types::AsyncResult,
+    utils::{log, types::AsyncResult},
 };
 
 #[allow(unused_imports)]
@@ -35,21 +36,17 @@ fn typebox_app() -> Result<(), Box<dyn Error>> {
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let tick_rate = Duration::from_millis(500);
+    let tick_rate = Duration::from_millis(5000);
     let res = run_app(&mut terminal, tick_rate);
 
     // restore terminal
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen,)?;
     terminal.show_cursor()?;
 
     if let Err(err) = res {
@@ -87,6 +84,7 @@ fn run_app<B: Backend>(
         editor_view.focus(editor.get_cursor());
 
         terminal.draw(|f| {
+            f.set_cursor(5, 5);
             f.render_stateful_widget(renderer, f.size(), &mut editor_view);
         })?;
 
