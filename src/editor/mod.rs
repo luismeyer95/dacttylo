@@ -14,7 +14,9 @@ pub struct EditorState {
     // Cursor coordinates expressed in (line, char index)
     index: usize,
     text: Rope,
+
     buffered_column_offset: usize,
+    reset_col: bool,
 }
 
 impl Default for EditorState {
@@ -37,25 +39,30 @@ impl EditorState {
             index: 0,
             buffered_column_offset: 0,
             text: Rope::from_str(""),
+            reset_col: false,
         }
     }
 
     pub fn insert_char(&mut self, c: char) {
         self.text.insert_char(self.index, c);
+        self.buffered_column_offset = self.column_offset();
     }
 
     pub fn insert(&mut self, slice: &str) {
         self.text.insert(self.index, slice);
+        self.buffered_column_offset = self.column_offset();
     }
 
     pub fn append_char(&mut self, c: char) {
         self.insert_char(c);
         self.index += 1;
+        self.buffered_column_offset = self.column_offset();
     }
 
     pub fn append(&mut self, slice: &str) {
         self.insert(slice);
         self.index += slice.chars().count();
+        self.buffered_column_offset = self.column_offset();
     }
 
     pub fn at_cursor(&self) -> char {
@@ -79,19 +86,44 @@ impl EditorState {
         self.count_graphemes(ln_start..self.index)
     }
 
+    fn update_buffered_offset(&mut self, mut f: impl FnMut(usize) -> usize) {
+        if (self.reset_col) {
+            self.buffered_column_offset = self.column_offset();
+            self.reset_col = false;
+        } else {
+            self.buffered_column_offset = f(self.buffered_column_offset);
+        }
+    }
+
     pub fn move_cursor(&mut self, dir: Direction) {
         match dir {
             Direction::Right => {
-                self.index = next_grapheme_boundary(
+                if (self.index == self.text.len_chars()) {
+                    return;
+                }
+                let current_ln = self.text.char_to_line(self.index);
+                let next_boundary = next_grapheme_boundary(
                     &self.text.slice(self.index..),
                     self.index,
                 );
+                let next_ln = self.text.char_to_line(next_boundary);
+                if current_ln != next_ln {
+                    return;
+                }
+                self.index = next_boundary;
+                self.update_buffered_offset(|x| x + 1);
             }
             Direction::Left => {
+                let ln = self.text.char_to_line(self.index);
+                let ln_start = self.text.line_to_char(ln);
+                if self.index == ln_start {
+                    return;
+                }
                 self.index = prev_grapheme_boundary(
                     &self.text.slice(..self.index),
                     self.index,
                 );
+                self.update_buffered_offset(|x| x.saturating_sub(1));
             }
             Direction::Up => {
                 let ln = self.text.char_to_line(self.index);
@@ -99,16 +131,15 @@ impl EditorState {
                     return;
                 }
 
-                let current_ln_start = self.text.line_to_char(ln);
                 let prev_ln_start = self.text.line_to_char(ln - 1);
+                let prev_ln_end = self.text.line_to_char(ln);
 
                 self.index = prev_ln_start
                     + std::cmp::min(
-                        self.count_graphemes(
-                            prev_ln_start..current_ln_start - 1,
-                        ),
-                        self.count_graphemes(current_ln_start..self.index),
-                    )
+                        self.count_graphemes(prev_ln_start..prev_ln_end - 1),
+                        self.buffered_column_offset,
+                    );
+                self.reset_col = true;
             }
             Direction::Down => {
                 let ln = self.text.char_to_line(self.index);
@@ -116,17 +147,18 @@ impl EditorState {
                     return;
                 }
 
-                let current_ln_start = self.text.line_to_char(ln);
                 let next_ln_start = self.text.line_to_char(ln + 1);
-                let next_ln_end = self.text.line_to_char(ln + 2);
+                let mut next_ln_end = self.text.line_to_char(ln + 2);
+                if ln != self.text.len_lines() - 2 {
+                    next_ln_end -= 1;
+                }
 
                 self.index = next_ln_start
                     + std::cmp::min(
-                        self.count_graphemes(
-                            current_ln_start..next_ln_start - 1,
-                        ),
                         self.count_graphemes(next_ln_start..next_ln_end),
-                    )
+                        self.buffered_column_offset,
+                    );
+                self.reset_col = true;
             }
         }
     }
@@ -301,5 +333,44 @@ mod tests {
 
         editor.move_cursor(Direction::Down);
         assert_eq!(editor.cursor(), Coord(1, 4));
+    }
+
+    #[test]
+    fn move_left_blocks_at_line_start() {
+        let mut editor = EditorState::new();
+
+        editor.append("ijkl\n");
+        assert_eq!(editor.cursor(), Coord(1, 0));
+        editor.move_cursor(Direction::Left);
+        editor.move_cursor(Direction::Left);
+        assert_eq!(editor.cursor(), Coord(1, 0));
+    }
+
+    #[test]
+    fn move_right_blocks_at_eol() {
+        let mut editor = EditorState::new();
+
+        editor.append("ijkl\nijkl");
+        assert_eq!(editor.cursor(), Coord(1, 4));
+
+        editor.move_cursor(Direction::Up);
+        assert_eq!(editor.cursor(), Coord(0, 4));
+
+        editor.move_cursor(Direction::Right);
+        assert_eq!(editor.cursor(), Coord(0, 4));
+
+        editor.move_cursor(Direction::Down);
+        assert_eq!(editor.cursor(), Coord(1, 4));
+    }
+
+    #[test]
+    fn move_right_blocks_at_eof() {
+        let mut editor = EditorState::new();
+
+        editor.append("ijkl");
+        assert_eq!(editor.cursor(), Coord(0, 4));
+
+        editor.move_cursor(Direction::Right);
+        assert_eq!(editor.cursor(), Coord(0, 4));
     }
 }
