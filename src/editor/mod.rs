@@ -43,6 +43,8 @@ impl EditorState {
         }
     }
 
+    // pub fn lines() -> Vec<> {}
+
     pub fn insert_char(&mut self, c: char) {
         self.text.insert_char(self.index, c);
         self.buffered_column_offset = self.column_offset();
