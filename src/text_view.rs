@@ -11,11 +11,13 @@ use tui::{
     text::StyledGrapheme,
     widgets::{Block, Widget},
 };
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use tui::widgets::Paragraph;
 
-type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;
+// type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;
+type StyledLineIterator<'a> = Box<dyn Iterator<Item = StyledGrapheme<'a>> + 'a>;
 
 pub enum Anchor {
     Start(usize),
@@ -31,7 +33,7 @@ pub struct RenderMetadata {
 /// Lower level, stateless text displaying engine.
 pub struct TextView<'a> {
     /// The full text buffer
-    text_lines: Vec<StyledLine<'a>>,
+    text_lines: Vec<StyledLineIterator<'a>>,
 
     /// Controls the line offset behaviour for the final display
     anchor: Anchor,
@@ -69,23 +71,46 @@ impl<'a> TextView<'a> {
         }
     }
 
-    pub fn content(mut self, lines: Vec<&'a str>) -> Self {
+    pub fn content<Lns>(mut self, lines: Lns) -> Self
+    where
+        Lns: IntoIterator<Item = &'a str>,
+    {
         self.text_lines = lines
             .into_iter()
-            .map(|s| vec![(s, tui::style::Style::default())])
+            .map(|s| {
+                Box::new(s.graphemes(true).map(|g| StyledGrapheme {
+                    symbol: g,
+                    style: tui::style::Style::default(),
+                })) as Box<dyn Iterator<Item = StyledGrapheme>>
+            })
             .collect();
         self
     }
 
-    pub fn styled_content(mut self, lines: Vec<StyledLine<'a>>) -> Self {
-        self.bg_color = lines
-            .get(0)
-            .and_then(|ln| ln.get(0))
-            .and_then(|(_, style)| style.bg)
-            .map_or_else(|| tui::style::Color::Reset, |style| style);
-        self.text_lines = lines;
+    pub fn styled_content<Lns, Ln>(mut self, lines: Lns) -> Self
+    where
+        Lns: IntoIterator<Item = Ln>,
+        Ln: IntoIterator<Item = StyledGrapheme<'a>> + 'a,
+    {
+        self.text_lines = lines
+            .into_iter()
+            .map(|s| {
+                Box::new(s.into_iter())
+                    as Box<dyn Iterator<Item = StyledGrapheme>>
+            })
+            .collect();
         self
     }
+
+    // pub fn styled_content(mut self, lines: Vec<StyledLine<'a>>) -> Self {
+    //     self.bg_color = lines
+    //         .get(0)
+    //         .and_then(|ln| ln.get(0))
+    //         .and_then(|(_, style)| style.bg)
+    //         .map_or_else(|| tui::style::Color::Reset, |style| style);
+    //     self.text_lines = lines;
+    //     self
+    // }
 
     pub fn block(mut self, block: Block<'a>) -> Self {
         self.block = block;
