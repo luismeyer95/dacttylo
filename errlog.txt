@@ -1,86 +1,12 @@
-warning: unused import: `highlighting::SyntectHighlighter`
- --> src/app/widget.rs:4:5
-  |
-4 |     highlighting::SyntectHighlighter,
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` on by default
-
-warning: unused import: `unicode_width::UnicodeWidthStr`
- --> src/editor_state.rs:1:5
-  |
-1 | use unicode_width::UnicodeWidthStr;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-warning: unused import: `crate::highlighting::Highlighter`
- --> src/editor_view.rs:1:5
-  |
-1 | use crate::highlighting::Highlighter;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-warning: unused import: `highlighting::SyntectHighlighter`
- --> src/editor_view.rs:4:5
-  |
-4 |     highlighting::SyntectHighlighter,
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-warning: unused imports: `Context`, `Poll`, `ops::Deref`, `pin::Pin`
- --> src/events/ticker.rs:4:5
-  |
-4 |     ops::Deref,
-  |     ^^^^^^^^^^
-5 |     pin::Pin,
-  |     ^^^^^^^^
-6 |     task::{Context, Poll},
-  |            ^^^^^^^  ^^^^
-
-warning: unused imports: `LineComposer`, `WordWrapper`
- --> src/line_stylizer.rs:5:18
-  |
-5 |         reflow::{LineComposer, WordWrapper},
-  |                  ^^^^^^^^^^^^  ^^^^^^^^^^^
-
-warning: unused imports: `PeerRecord`, `Record`
- --> src/session/client.rs:5:24
-  |
-5 |     kad::{record::Key, PeerRecord, Record},
-  |                        ^^^^^^^^^^  ^^^^^^
-
-warning: unused import: `futures::Stream`
- --> src/session/event.rs:1:5
-  |
-1 | use futures::Stream;
-  |     ^^^^^^^^^^^^^^^
-
-warning: unused imports: `Context`, `Poll`, `pin::Pin`
- --> src/session/event.rs:4:5
-  |
-4 |     pin::Pin,
-  |     ^^^^^^^^
-5 |     task::{Context, Poll},
-  |            ^^^^^^^  ^^^^
-
-warning: unused import: `tui::widgets::Paragraph`
-  --> src/text_view.rs:16:5
-   |
-16 | use tui::widgets::Paragraph;
-   |     ^^^^^^^^^^^^^^^^^^^^^^^
-
-warning: unused imports: `HashMap`, `HashSet`
- --> src/utils/helpers.rs:3:19
-  |
-3 |     collections::{HashMap, HashSet},
-  |                   ^^^^^^^  ^^^^^^^
-
-warning: unreachable pattern
-   --> src/text_view.rs:152:13
-    |
-152 |             _ => panic!("Disabled anchors"),
-    |             ^
-    |
-    = note: `#[warn(unreachable_patterns)]` on by default
-
-warning: `dacttylo` (lib) generated 12 warnings
    Compiling dacttylo v0.1.0 (/Users/luismeyer/Desktop/repos/ttypebox)
-    Finished dev [unoptimized + debuginfo] target(s) in 2.62s
-     Running `target/debug/editor`
+error[E0271]: type mismatch resolving `<Vec<(&str, tui::style::Style)> as IntoIterator>::Item == StyledGrapheme<'_>`
+  --> src/app/widget.rs:99:14
+   |
+99 |             .styled_content(styled_lines)
+   |              ^^^^^^^^^^^^^^ expected tuple, found struct `StyledGrapheme`
+   |
+   = note: expected tuple `(&str, tui::style::Style)`
+             found struct `StyledGrapheme<'_>`
+
+For more information about this error, try `rustc --explain E0271`.
+error: could not compile `dacttylo` due to previous error

@@ -6,7 +6,9 @@ use crate::{
     text_view::{Anchor, TextView},
 };
 use std::collections::HashMap;
+use tui::text::StyledGrapheme;
 use tui::{buffer::Buffer, layout::Rect, style::Color, widgets::Widget};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::InputResult;
 
@@ -77,12 +79,26 @@ impl<'txt, 'hl> DacttyloWidget<'txt, 'hl> {
     }
 }
 
+type StyledLineIterator<'a> = Box<dyn Iterator<Item = StyledGrapheme<'a>> + 'a>;
+
 impl<'txt, 'hl> Widget for DacttyloWidget<'txt, 'hl> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let text_lines: Vec<&str> =
             self.game_state.text().split_inclusive('\n').collect();
 
-        let styled_lines = self.highlighter.highlight(text_lines.as_ref());
+        let styled_lines: Vec<Box<dyn Iterator<Item = StyledGrapheme<'txt>>>> =
+            self.highlighter
+                .highlight(text_lines.as_ref())
+                .into_iter()
+                .map(|tokens| {
+                    Box::new(tokens.into_iter().flat_map(|(token, style)| {
+                        token
+                            .graphemes(true)
+                            .map(move |g| StyledGrapheme { symbol: g, style })
+                    }))
+                        as Box<dyn Iterator<Item = StyledGrapheme<'txt>>>
+                })
+                .collect();
 
         // let eggshell = Color::Rgb(255, 239, 214);
         // let darkblue = Color::Rgb(0, 27, 46);
@@ -96,8 +112,22 @@ impl<'txt, 'hl> Widget for DacttyloWidget<'txt, 'hl> {
 
         let view = TextView::new()
             .sparse_styling(self.get_cursor_styles(&text_lines))
-            .styled_content(styled_lines)
+            .styled_content(styled_lines.into_iter())
             .anchor(Anchor::Center(main_coord.0));
         view.render(area, buf);
     }
+}
+
+fn tokens_to_graphemes<'tkn>(
+    tokens: &[(&'tkn str, tui::style::Style)],
+) -> Vec<StyledGrapheme<'tkn>> {
+    tokens
+        .iter()
+        .flat_map(|(token, style)| {
+            token.graphemes(true).map(|g| StyledGrapheme {
+                symbol: g,
+                style: *style,
+            })
+        })
+        .collect::<Vec<StyledGrapheme<'tkn>>>()
 }

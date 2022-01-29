@@ -15,7 +15,7 @@ pub struct LineStylizer;
 impl LineProcessor for LineStylizer {
     fn process_line<'txt>(
         &self,
-        line: &[(&'txt str, tui::style::Style)],
+        line: &mut dyn Iterator<Item = StyledGrapheme<'txt>>,
         sparse_styling: HashMap<usize, tui::style::Style>,
         width: u16,
     ) -> Vec<Vec<StyledGrapheme<'txt>>> {
@@ -30,10 +30,10 @@ impl LineStylizer {
 
     fn transform_line<'txt>(
         &self,
-        line: &[(&'txt str, tui::style::Style)],
+        line: &mut dyn Iterator<Item = StyledGrapheme<'txt>>,
         sparse_styling: HashMap<usize, tui::style::Style>,
     ) -> Vec<StyledGrapheme<'txt>> {
-        let mut graphemes = Self::tokens_to_graphemes(line);
+        let mut graphemes: Vec<StyledGrapheme> = line.collect();
         // appending a blank cell for the end of line style case
         // unconditional to prevent sudden rewrapping on cursor movement
         graphemes.push(StyledGrapheme {
@@ -77,20 +77,6 @@ impl LineStylizer {
         // prefixed
 
         ln
-    }
-
-    fn tokens_to_graphemes<'tkn>(
-        tokens: &[(&'tkn str, tui::style::Style)],
-    ) -> Vec<StyledGrapheme<'tkn>> {
-        tokens
-            .iter()
-            .flat_map(|(token, style)| {
-                token.graphemes(true).map(|g| StyledGrapheme {
-                    symbol: g,
-                    style: *style,
-                })
-            })
-            .collect::<Vec<StyledGrapheme<'tkn>>>()
     }
 
     fn apply_sparse_styling<'txt>(

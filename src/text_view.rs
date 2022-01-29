@@ -2,6 +2,7 @@ use crate::{
     line_processor::LineProcessor, line_stylizer::LineStylizer,
     text_coord::TextCoord,
 };
+use std::cell::RefCell;
 use std::cmp::min;
 use std::ops::Range;
 use std::{cmp::Ordering, collections::HashMap};
@@ -19,21 +20,23 @@ use tui::widgets::Paragraph;
 // type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;
 type StyledLineIterator<'a> = Box<dyn Iterator<Item = StyledGrapheme<'a>> + 'a>;
 
+#[derive(Debug, Clone)]
 pub enum Anchor {
     Start(usize),
     Center(usize),
     End(usize),
 }
 
+#[derive(Debug, Clone)]
 pub struct RenderMetadata {
     pub lines_rendered: Range<usize>,
     pub anchor: Anchor,
 }
 
 /// Lower level, stateless text displaying engine.
-pub struct TextView<'a> {
+pub struct TextView<'a, 'cb> {
     /// The full text buffer
-    text_lines: Vec<StyledLineIterator<'a>>,
+    text_lines: RefCell<Vec<StyledLineIterator<'a>>>,
 
     /// Controls the line offset behaviour for the final display
     anchor: Anchor,
@@ -53,15 +56,15 @@ pub struct TextView<'a> {
     bg_color: tui::style::Color,
 
     /// Optional closure to set external UI state from the list of displayed lines
-    metadata_handler: Option<Box<dyn FnMut(RenderMetadata) + 'a>>,
+    metadata_handler: Option<Box<dyn FnMut(RenderMetadata) + 'cb>>,
 }
 
-impl<'a> TextView<'a> {
+impl<'a, 'cb> TextView<'a, 'cb> {
     /// Instantiate a TextView widget from a line buffer and use the builder
     /// pattern to set custom rendering options
     pub fn new() -> Self {
         Self {
-            text_lines: vec![],
+            text_lines: vec![].into(),
             line_processor: Box::new(LineStylizer),
             anchor: Anchor::Start(0),
             sparse_styling: HashMap::new(),
@@ -73,7 +76,7 @@ impl<'a> TextView<'a> {
 
     pub fn content<Lns>(mut self, lines: Lns) -> Self
     where
-        Lns: IntoIterator<Item = &'a str>,
+        Lns: Iterator<Item = &'a str>,
     {
         self.text_lines = lines
             .into_iter()
@@ -83,34 +86,23 @@ impl<'a> TextView<'a> {
                     style: tui::style::Style::default(),
                 })) as Box<dyn Iterator<Item = StyledGrapheme>>
             })
-            .collect();
+            .collect::<Vec<_>>()
+            .into();
         self
     }
 
     pub fn styled_content<Lns, Ln>(mut self, lines: Lns) -> Self
     where
-        Lns: IntoIterator<Item = Ln>,
-        Ln: IntoIterator<Item = StyledGrapheme<'a>> + 'a,
+        Lns: Iterator<Item = Ln>,
+        Ln: Into<Box<dyn Iterator<Item = StyledGrapheme<'a>> + 'a>>,
     {
         self.text_lines = lines
             .into_iter()
-            .map(|s| {
-                Box::new(s.into_iter())
-                    as Box<dyn Iterator<Item = StyledGrapheme>>
-            })
-            .collect();
+            .map(|s| s.into() as Box<dyn Iterator<Item = StyledGrapheme>>)
+            .collect::<Vec<_>>()
+            .into();
         self
     }
-
-    // pub fn styled_content(mut self, lines: Vec<StyledLine<'a>>) -> Self {
-    //     self.bg_color = lines
-    //         .get(0)
-    //         .and_then(|ln| ln.get(0))
-    //         .and_then(|(_, style)| style.bg)
-    //         .map_or_else(|| tui::style::Color::Reset, |style| style);
-    //     self.text_lines = lines;
-    //     self
-    // }
 
     pub fn block(mut self, block: Block<'a>) -> Self {
         self.block = block;
@@ -126,13 +118,13 @@ impl<'a> TextView<'a> {
     }
 
     pub fn anchor(mut self, anchor: Anchor) -> Self {
+        let line_count = self.text_lines.borrow().len();
+
         self.anchor = match anchor {
-            Anchor::Start(anchor) if anchor >= self.text_lines.len() => {
+            Anchor::Start(anchor) if anchor >= line_count => {
                 panic!("Anchor out of bounds")
             }
-            Anchor::End(anchor) => {
-                Anchor::End(min(anchor, self.text_lines.len()))
-            }
+            Anchor::End(anchor) => Anchor::End(min(anchor, line_count)),
             _ => anchor,
         };
         self
@@ -153,7 +145,7 @@ impl<'a> TextView<'a> {
 
     pub fn on_render(
         mut self,
-        callback: impl FnMut(RenderMetadata) + 'a,
+        callback: impl FnMut(RenderMetadata) + 'cb,
     ) -> Self {
         self.metadata_handler = Some(Box::new(callback));
         self
@@ -253,7 +245,7 @@ impl<'a> TextView<'a> {
         start_ln: usize,
         area: Rect,
     ) -> (usize, Vec<Vec<StyledGrapheme<'_>>>) {
-        let total_lines = self.text_lines.len();
+        let total_lines = self.text_lines.borrow().len();
         let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
 
         for current_ln in start_ln..total_lines {
@@ -313,19 +305,19 @@ impl<'a> TextView<'a> {
         line_nb: usize,
         width: u16,
     ) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let line = self.text_lines[line_nb].as_slice();
+        let mut line = &mut self.text_lines.borrow_mut()[line_nb];
         let styling = Self::extract_ln_styling(&self.sparse_styling, line_nb);
         self.line_processor.process_line(line, styling, width)
     }
 }
 
-impl<'a> Default for TextView<'a> {
+impl<'a, 'cb> Default for TextView<'a, 'cb> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a> Widget for TextView<'a> {
+impl<'a, 'cb> Widget for TextView<'a, 'cb> {
     fn render(mut self, mut area: Rect, buf: &mut Buffer) {
         self.render_block(&mut area, buf);
         if area.height < 1 || area.width < 1 {

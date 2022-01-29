@@ -76,14 +76,15 @@ fn run_app<B: Backend>(
         .file(filepath)?;
 
     loop {
-        let renderer = EditorRenderer::new()
-            // .styled_content(hl_builder.clone().build()?.highlight(&lines));
-            .styled_content(NoOpHighlighter.highlight(&editor.get_lines()));
+        let lines = &editor.get_lines();
+        // let hl_lines = hl_builder.clone().build()?.highlight(lines);
+
+        let renderer = EditorRenderer::content(lines.iter().copied());
 
         editor_view.focus(editor.get_cursor());
 
         terminal.draw(|f| {
-            f.set_cursor(5, 5);
+            // f.set_cursor(5, 5);
             f.render_stateful_widget(renderer, f.size(), &mut editor_view);
         })?;
 
