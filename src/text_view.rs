@@ -15,7 +15,7 @@ use tui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use tui::widgets::Paragraph;
+use tui::widgets::{Paragraph, StatefulWidget};
 
 // type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;
 type StyledLineIterator<'a> = Box<dyn Iterator<Item = StyledGrapheme<'a>> + 'a>;
@@ -34,7 +34,7 @@ pub struct RenderMetadata {
 }
 
 /// Lower level, stateless text displaying engine.
-pub struct TextView<'a, 'cb> {
+pub struct TextView<'a> {
     /// The full text buffer
     text_lines: RefCell<Vec<StyledLineIterator<'a>>>,
 
@@ -55,11 +55,10 @@ pub struct TextView<'a, 'cb> {
     /// Option to override the background color after all styles are applied
     bg_color: tui::style::Color,
 
-    /// Optional closure to set external UI state from the list of displayed lines
-    metadata_handler: Option<Box<dyn FnMut(RenderMetadata) + 'cb>>,
+    cursor: Option<TextCoord>,
 }
 
-impl<'a, 'cb> TextView<'a, 'cb> {
+impl<'a> TextView<'a> {
     /// Instantiate a TextView widget from a line buffer and use the builder
     /// pattern to set custom rendering options
     pub fn new() -> Self {
@@ -70,7 +69,7 @@ impl<'a, 'cb> TextView<'a, 'cb> {
             sparse_styling: HashMap::new(),
             block: Default::default(),
             bg_color: tui::style::Color::Reset,
-            metadata_handler: None,
+            cursor: None,
         }
     }
 
@@ -130,6 +129,8 @@ impl<'a, 'cb> TextView<'a, 'cb> {
         self
     }
 
+    // pub fn cursor(coord: TextCoord) {}
+
     pub fn sparse_styling(
         mut self,
         sparse_styling: HashMap<TextCoord, tui::style::Style>,
@@ -143,14 +144,6 @@ impl<'a, 'cb> TextView<'a, 'cb> {
         self
     }
 
-    pub fn on_render(
-        mut self,
-        callback: impl FnMut(RenderMetadata) + 'cb,
-    ) -> Self {
-        self.metadata_handler = Some(Box::new(callback));
-        self
-    }
-
     fn render_block(&mut self, area: &mut Rect, buf: &mut Buffer) {
         let block = std::mem::take(&mut self.block);
 
@@ -161,11 +154,19 @@ impl<'a, 'cb> TextView<'a, 'cb> {
         *area = inner_area;
     }
 
-    fn generate_view(&mut self, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
+    fn generate_view(
+        &mut self,
+        area: Rect,
+        meta: &mut Option<RenderMetadata>,
+    ) -> Vec<Vec<StyledGrapheme<'_>>> {
         match self.anchor {
-            Anchor::Start(anchor) => self.generate_start_anchor(anchor, area),
-            Anchor::End(anchor) => self.generate_end_anchor(anchor, area),
-            Anchor::Center(anchor) => self.generate_center_anchor(anchor, area),
+            Anchor::Start(anchor) => {
+                self.generate_start_anchor(anchor, area, meta)
+            }
+            Anchor::End(anchor) => self.generate_end_anchor(anchor, area, meta),
+            Anchor::Center(anchor) => {
+                self.generate_center_anchor(anchor, area, meta)
+            }
             _ => panic!("Disabled anchors"),
         }
     }
@@ -174,17 +175,14 @@ impl<'a, 'cb> TextView<'a, 'cb> {
         &mut self,
         anchor: usize,
         area: Rect,
+        meta: &mut Option<RenderMetadata>,
     ) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let handler = self.metadata_handler.take();
-
         let (end_ln, rows) = self.expand_rows_down(anchor, area);
 
-        if let Some(mut handler) = handler {
-            handler(RenderMetadata {
-                lines_rendered: anchor..end_ln,
-                anchor: Anchor::Start(anchor),
-            });
-        }
+        *meta = Some(RenderMetadata {
+            lines_rendered: anchor..end_ln,
+            anchor: Anchor::Start(anchor),
+        });
 
         rows
     }
@@ -193,21 +191,18 @@ impl<'a, 'cb> TextView<'a, 'cb> {
         &mut self,
         anchor: usize,
         area: Rect,
+        meta: &mut Option<RenderMetadata>,
     ) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let handler = self.metadata_handler.take();
-
         let (start_ln, mut rows) = self.expand_rows_up(anchor - 1, area);
         let area = Rect::new(0, 0, area.width, area.height - rows.len() as u16); // cast should be safe
         let (end_ln, bottom_rows) = self.expand_rows_down(anchor, area);
         rows.extend(bottom_rows);
 
         // passing the actually displayed line range
-        if let Some(mut handler) = handler {
-            handler(RenderMetadata {
-                lines_rendered: start_ln..end_ln,
-                anchor: Anchor::End(anchor),
-            });
-        }
+        *meta = Some(RenderMetadata {
+            lines_rendered: start_ln..end_ln,
+            anchor: Anchor::End(anchor),
+        });
 
         rows
     }
@@ -216,9 +211,8 @@ impl<'a, 'cb> TextView<'a, 'cb> {
         &mut self,
         anchor: usize,
         area: Rect,
+        meta: &mut Option<RenderMetadata>,
     ) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let handler = self.metadata_handler.take();
-
         let half_height_area = Rect::new(0, 0, area.width, area.height / 2);
 
         let (start_ln, mut rows) =
@@ -228,13 +222,11 @@ impl<'a, 'cb> TextView<'a, 'cb> {
         let (end_ln, bottom_rows) = self.expand_rows_down(anchor + 1, area);
         rows.extend(bottom_rows);
 
-        // passing the fully displayed line range
-        if let Some(mut handler) = handler {
-            handler(RenderMetadata {
-                lines_rendered: start_ln..end_ln,
-                anchor: Anchor::Center(anchor),
-            });
-        }
+        // passing the actually displayed line range
+        *meta = Some(RenderMetadata {
+            lines_rendered: start_ln..end_ln,
+            anchor: Anchor::Center(anchor),
+        });
 
         rows
     }
@@ -311,14 +303,21 @@ impl<'a, 'cb> TextView<'a, 'cb> {
     }
 }
 
-impl<'a, 'cb> Default for TextView<'a, 'cb> {
+impl<'a> Default for TextView<'a> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a, 'cb> Widget for TextView<'a, 'cb> {
-    fn render(mut self, mut area: Rect, buf: &mut Buffer) {
+impl<'a> StatefulWidget for TextView<'a> {
+    type State = Option<RenderMetadata>;
+
+    fn render(
+        mut self,
+        mut area: Rect,
+        buf: &mut Buffer,
+        state: &mut Self::State,
+    ) {
         self.render_block(&mut area, buf);
         if area.height < 1 || area.width < 1 {
             return;
@@ -332,7 +331,7 @@ impl<'a, 'cb> Widget for TextView<'a, 'cb> {
             }
         }
 
-        let lines = self.generate_view(area);
+        let lines = self.generate_view(area, state);
         let mut y = 0;
         for line in lines {
             let mut x = 0;

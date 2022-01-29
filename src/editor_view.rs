@@ -6,6 +6,7 @@ use crate::{
     text_view::{Anchor, TextView},
 };
 use std::collections::HashMap;
+use std::iter;
 use tui::text::StyledGrapheme;
 use tui::{
     buffer::Buffer,
@@ -46,13 +47,13 @@ impl Default for EditorViewState {
 }
 
 type StyledLineIterator<'a> = Box<dyn Iterator<Item = StyledGrapheme<'a>> + 'a>;
-pub struct EditorRenderer<'a, 'cb> {
+pub struct EditorRenderer<'a> {
     /// Full linesplit text buffer, only a subset will be rendered each frame
     // pub text_lines: Vec<StyledLineIterator<'a>>,
-    text_view: TextView<'a, 'cb>,
+    text_view: TextView<'a>,
 }
 
-impl<'a, 'cb> EditorRenderer<'a, 'cb> {
+impl<'a> EditorRenderer<'a> {
     pub fn styled_content<Lns, Ln>(lines: Lns) -> Self
     where
         Lns: Iterator<Item = Ln>,
@@ -93,36 +94,27 @@ impl<'a, 'cb> EditorRenderer<'a, 'cb> {
     }
 }
 
-// impl<'a, 'cb> Default for EditorRenderer<'a, 'cb> {
-//     fn default() -> Self {
-//         Self::new()
-//     }
-// }
-
-impl<'a, 'cb> StatefulWidget for EditorRenderer<'a, 'cb> {
+impl<'a> StatefulWidget for EditorRenderer<'a> {
     type State = EditorViewState;
 
     fn render(mut self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let anchor = Self::compute_anchor(state);
-        let cursor_style = tui::style::Style::default()
-            .bg(Color::Black)
-            .fg(Color::White);
 
         // let eggshell = Color::Rgb(255, 239, 214);
         // let darkblue = Color::Rgb(0, 27, 46);
 
+        let cursor = iter::once((
+            TextCoord::new(state.focus_coord.ln, state.focus_coord.x),
+            tui::style::Style::default()
+                .bg(Color::Black)
+                .fg(Color::White),
+        ));
+
         let view = self
             .text_view
             .anchor(anchor)
-            .on_render(|metadata| {
-                state.last_render = Some(metadata);
-            })
-            .sparse_styling(
-                HashMap::<TextCoord, tui::style::Style>::from_iter(vec![(
-                    TextCoord::new(state.focus_coord.ln, state.focus_coord.x),
-                    cursor_style,
-                )]),
-            );
-        view.render(area, buf);
+            .sparse_styling(HashMap::<_, _>::from_iter(cursor));
+
+        view.render(area, buf, &mut state.last_render);
     }
 }

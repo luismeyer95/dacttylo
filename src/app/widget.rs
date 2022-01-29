@@ -1,4 +1,5 @@
 use crate::highlighting::{Highlighter, NoOpHighlighter};
+use crate::text_view::RenderMetadata;
 use crate::utils::helpers;
 use crate::{
     highlighting::SyntectHighlighter,
@@ -7,6 +8,7 @@ use crate::{
 };
 use std::collections::HashMap;
 use tui::text::StyledGrapheme;
+use tui::widgets::StatefulWidget;
 use tui::{buffer::Buffer, layout::Rect, style::Color, widgets::Widget};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -81,8 +83,10 @@ impl<'txt, 'hl> DacttyloWidget<'txt, 'hl> {
 
 type StyledLineIterator<'a> = Box<dyn Iterator<Item = StyledGrapheme<'a>> + 'a>;
 
-impl<'txt, 'hl> Widget for DacttyloWidget<'txt, 'hl> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+impl<'txt, 'hl> StatefulWidget for DacttyloWidget<'txt, 'hl> {
+    type State = Option<RenderMetadata>;
+
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let text_lines: Vec<&str> =
             self.game_state.text().split_inclusive('\n').collect();
 
@@ -114,20 +118,6 @@ impl<'txt, 'hl> Widget for DacttyloWidget<'txt, 'hl> {
             .sparse_styling(self.get_cursor_styles(&text_lines))
             .styled_content(styled_lines.into_iter())
             .anchor(Anchor::Center(main_coord.0));
-        view.render(area, buf);
+        view.render(area, buf, state);
     }
-}
-
-fn tokens_to_graphemes<'tkn>(
-    tokens: &[(&'tkn str, tui::style::Style)],
-) -> Vec<StyledGrapheme<'tkn>> {
-    tokens
-        .iter()
-        .flat_map(|(token, style)| {
-            token.graphemes(true).map(|g| StyledGrapheme {
-                symbol: g,
-                style: *style,
-            })
-        })
-        .collect::<Vec<StyledGrapheme<'tkn>>>()
 }

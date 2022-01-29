@@ -85,10 +85,11 @@ async fn run_practice_session(
         }
 
         term.draw(|f| {
-            f.render_widget(
+            f.render_stateful_widget(
                 DacttyloWidget::new(&game_state)
                     .highlighter(&hl_builder.clone().build().unwrap()),
                 f.size(),
+                &mut None,
             );
         })?;
     }
