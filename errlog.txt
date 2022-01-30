@@ -1,12 +1,2 @@
-   Compiling dacttylo v0.1.0 (/Users/luismeyer/Desktop/repos/ttypebox)
-error[E0271]: type mismatch resolving `<Vec<(&str, tui::style::Style)> as IntoIterator>::Item == StyledGrapheme<'_>`
-  --> src/app/widget.rs:99:14
-   |
-99 |             .styled_content(styled_lines)
-   |              ^^^^^^^^^^^^^^ expected tuple, found struct `StyledGrapheme`
-   |
-   = note: expected tuple `(&str, tui::style::Style)`
-             found struct `StyledGrapheme<'_>`
-
-For more information about this error, try `rustc --explain E0271`.
-error: could not compile `dacttylo` due to previous error
+    Finished dev [unoptimized + debuginfo] target(s) in 0.31s
+     Running `target/debug/editor`
