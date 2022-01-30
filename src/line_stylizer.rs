@@ -1,5 +1,5 @@
 use crate::{
-    line_processor::LineProcessor,
+    line_processor::{LineProcessor, MappedCell},
     utils::{
         log,
         reflow::{LineComposer, WordWrapper},
@@ -43,10 +43,10 @@ impl LineProcessor for BaseLineProcessor {
     fn process_line<'txt>(
         &self,
         line: &mut dyn Iterator<Item = StyledGrapheme<'txt>>,
-        sparse_styling: HashMap<usize, tui::style::Style>,
+        // sparse_styling: HashMap<usize, tui::style::Style>,
         width: u16,
-    ) -> Vec<Vec<StyledGrapheme<'txt>>> {
-        let line = self.transform_line(line, sparse_styling);
+    ) -> Vec<Vec<MappedCell<'txt>>> {
+        let line = self.transform_line(line);
         Self::wrap_line(line, width)
     }
 }
@@ -55,8 +55,7 @@ impl BaseLineProcessor {
     fn transform_line<'txt>(
         &self,
         line: &mut dyn Iterator<Item = StyledGrapheme<'txt>>,
-        sparse_styling: HashMap<usize, tui::style::Style>,
-    ) -> Vec<StyledGrapheme<'txt>> {
+    ) -> Vec<MappedCell<'txt>> {
         let mut graphemes: Vec<StyledGrapheme> = line.collect();
         // appending a blank cell for the end of line style case
         // unconditional to prevent sudden rewrapping on cursor movement
@@ -66,71 +65,67 @@ impl BaseLineProcessor {
         });
 
         let mut column_offset = 0;
-        let mut transformed_line: Vec<StyledGrapheme> = vec![];
+        let mut transformed_line: Vec<MappedCell> = vec![];
 
         for (key_offset, gphm) in graphemes.into_iter().enumerate() {
-            let remapped_key = self.remap_symbol(column_offset, gphm);
-            let styled_key = Self::apply_sparse_styling(
-                key_offset,
-                remapped_key,
-                &sparse_styling,
-            );
+            let remapped_key =
+                self.remap_symbol(column_offset, gphm, key_offset);
             let column_size: usize =
-                styled_key.iter().map(|k| k.symbol.width()).sum();
-
-            transformed_line.extend(styled_key);
+                remapped_key.iter().map(|k| k.grapheme.symbol.width()).sum();
+            transformed_line.extend(remapped_key);
             column_offset += column_size;
         }
 
-        Self::prefix_line(transformed_line)
+        transformed_line
+        // Self::prefix_line(transformed_line)
     }
 
-    fn prefix_line(ln: Vec<StyledGrapheme>) -> Vec<StyledGrapheme> {
-        // let mut prefixed = vec![
-        //     StyledGrapheme {
-        //         symbol: "~",
-        //         style: Default::default(),
-        //     },
-        //     StyledGrapheme {
-        //         symbol: " ",
-        //         style: Default::default(),
-        //     },
-        // ];
-        // prefixed.extend(ln);
-        // prefixed
+    // fn prefix_line(ln: Vec<StyledGrapheme>) -> Vec<StyledGrapheme> {
+    // let mut prefixed = vec![
+    //     StyledGrapheme {
+    //         symbol: "~",
+    //         style: Default::default(),
+    //     },
+    //     StyledGrapheme {
+    //         symbol: " ",
+    //         style: Default::default(),
+    //     },
+    // ];
+    // prefixed.extend(ln);
+    // prefixed
 
-        ln
-    }
+    // ln
+    // }
 
-    fn apply_sparse_styling<'txt>(
-        key_offset: usize,
-        mut key_as_graphemes: Vec<StyledGrapheme<'txt>>,
-        sparse_styling: &HashMap<usize, tui::style::Style>,
-    ) -> Vec<StyledGrapheme<'txt>> {
-        if let Some(style) = sparse_styling.get(&key_offset) {
-            // key_as_graphemes[0].style = *style;
-            let mut style_ref = &mut key_as_graphemes[0].style;
-            *style_ref = style_ref.patch(*style);
-        }
-        key_as_graphemes
-    }
+    // fn apply_sparse_styling<'txt>(
+    //     key_offset: usize,
+    //     mut key_as_graphemes: Vec<StyledGrapheme<'txt>>,
+    //     sparse_styling: &HashMap<usize, tui::style::Style>,
+    // ) -> Vec<StyledGrapheme<'txt>> {
+    //     if let Some(style) = sparse_styling.get(&key_offset) {
+    //         // key_as_graphemes[0].style = *style;
+    //         let mut style_ref = &mut key_as_graphemes[0].style;
+    //         *style_ref = style_ref.patch(*style);
+    //     }
+    //     key_as_graphemes
+    // }
 
     fn wrap_line(
-        graphemes: Vec<StyledGrapheme>,
+        mapped_cells: Vec<MappedCell>,
         width: u16,
-    ) -> Vec<Vec<StyledGrapheme>> {
-        let mut rows: Vec<Vec<StyledGrapheme>> = Vec::with_capacity(16);
-        let mut cur_row: Vec<StyledGrapheme> = Vec::with_capacity(16);
+    ) -> Vec<Vec<MappedCell>> {
+        let mut rows: Vec<Vec<MappedCell>> = Vec::with_capacity(16);
+        let mut cur_row: Vec<MappedCell> = Vec::with_capacity(16);
         let mut cur_row_width = 0;
 
-        for g in graphemes {
-            let sym_width = g.symbol.width();
+        for cell in mapped_cells {
+            let sym_width = cell.grapheme.symbol.width();
             if sym_width + cur_row_width > width as usize {
                 rows.push(cur_row);
                 cur_row = vec![];
                 cur_row_width = 0;
             }
-            cur_row.push(g);
+            cur_row.push(cell);
             cur_row_width += sym_width;
         }
 
@@ -145,11 +140,12 @@ impl BaseLineProcessor {
         &self,
         inline_index: usize,
         grapheme: StyledGrapheme<'txt>,
-    ) -> Vec<StyledGrapheme<'txt>> {
+        key_offset: usize,
+    ) -> Vec<MappedCell<'txt>> {
         match grapheme.symbol {
-            "\n" => self.remap_newline(grapheme),
-            "\t" => self.remap_tab(grapheme, inline_index),
-            _ => vec![grapheme],
+            "\n" => self.remap_newline(grapheme, key_offset),
+            "\t" => self.remap_tab(grapheme, inline_index, key_offset),
+            _ => vec![MappedCell::new(Some(key_offset), grapheme)],
         }
     }
 
@@ -157,18 +153,28 @@ impl BaseLineProcessor {
         &self,
         grapheme: StyledGrapheme,
         column_index: usize,
-    ) -> Vec<StyledGrapheme<'txt>> {
+        key_offset: usize,
+    ) -> Vec<MappedCell<'txt>> {
         let tab_width = (4 - column_index % 4) as u8;
 
-        let mut tab = vec![StyledGrapheme {
-            symbol: self.symbols.tab.symbol,
-            style: grapheme.style.patch(self.symbols.tab.style),
-        }];
-        tab.extend(vec![
+        let mapped_tab = MappedCell::new(
+            Some(key_offset),
             StyledGrapheme {
-                symbol: " ",
-                style: grapheme.style
-            };
+                symbol: self.symbols.tab.symbol,
+                style: grapheme.style.patch(self.symbols.tab.style),
+            },
+        );
+
+        let mut tab = vec![mapped_tab];
+
+        tab.extend(vec![
+            MappedCell::new(
+                None,
+                StyledGrapheme {
+                    symbol: " ",
+                    style: grapheme.style
+                }
+            );
             (tab_width - 1) as usize
         ]);
 
@@ -178,11 +184,16 @@ impl BaseLineProcessor {
     fn remap_newline<'txt>(
         &self,
         grapheme: StyledGrapheme,
-    ) -> Vec<StyledGrapheme<'txt>> {
-        vec![StyledGrapheme {
-            symbol: self.symbols.nl.symbol,
-            style: grapheme.style.patch(self.symbols.nl.style),
-        }]
+        key_offset: usize,
+    ) -> Vec<MappedCell<'txt>> {
+        let mapped_nl = MappedCell::new(
+            Some(key_offset),
+            StyledGrapheme {
+                symbol: self.symbols.nl.symbol,
+                style: grapheme.style.patch(self.symbols.nl.style),
+            },
+        );
+        vec![mapped_nl]
     }
 }
 
@@ -192,9 +203,8 @@ impl LineProcessor for LineStylizer {
     fn process_line<'txt>(
         &self,
         line: &mut dyn Iterator<Item = StyledGrapheme<'txt>>,
-        sparse_styling: HashMap<usize, tui::style::Style>,
         width: u16,
-    ) -> Vec<Vec<StyledGrapheme<'txt>>> {
+    ) -> Vec<Vec<MappedCell<'txt>>> {
         let yellow = |symbol| StyledGrapheme {
             style: tui::style::Style::default().fg(tui::style::Color::Yellow),
             symbol,
@@ -207,51 +217,73 @@ impl LineProcessor for LineStylizer {
             },
         };
 
-        processor.process_line(line, sparse_styling, width)
+        processor.process_line(line, width)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::types::Coord;
-
-    use super::*;
+    use crate::{
+        line_processor::{LineProcessor, MappedCell},
+        line_stylizer::BaseLineProcessor,
+        utils::types::Coord,
+    };
+    use tui::text::StyledGrapheme;
+    use unicode_segmentation::UnicodeSegmentation;
 
     #[test]
-    fn basic() {
+    fn identity_mapping() {
         use tui::style::{Color, Style};
 
         let proc = BaseLineProcessor::default();
-        let default_style = Style::default();
-        // let colored_style = default_style.fg(Color::Cyan).bg(Color::Yellow);
+        let line = "Hello world\n";
 
-        let line = "Hello world how are you today?\n";
+        let mut graphemes_iter =
+            line.graphemes(true).map(|gp| StyledGrapheme {
+                symbol: gp,
+                style: Default::default(),
+            });
 
-        let mut metaline = line.graphemes(true).map(|gp| StyledGrapheme {
-            symbol: gp,
-            style: default_style,
-        });
+        let res: Vec<Vec<MappedCell>> =
+            proc.process_line(&mut graphemes_iter, 4);
 
-        let res: Vec<Vec<MappedCell>> = proc.process_line(&mut metaline, 8);
+        for (index, cell) in res.into_iter().flatten().enumerate() {
+            assert_eq!(Some(index), cell.index);
+        }
+    }
 
-        let identity = |slice| {
-            slice
-                .graphemes(true)
-                .enumerate()
-                .map(|(index, gp)| MappedCell {
-                    index: Some(index),
-                    grapheme: gp,
-                })
+    #[test]
+    fn using_tabs() {
+        use tui::style::{Color, Style};
+
+        // 'w' should be mapped to (0, 8) in all cases given width > 8
+        let lines = vec![
+            "Hell\tworld\n",
+            "Hello\tworld\n",
+            "Helloo\tworld\n",
+            "Hellooo\tworld\n",
+        ];
+
+        let test = |slice: &str, width| {
+            let proc = BaseLineProcessor::default();
+            let default_style = Style::default();
+
+            let mut graphemes_iter =
+                slice.graphemes(true).map(|gp| StyledGrapheme {
+                    symbol: gp,
+                    style: default_style,
+                });
+
+            let rows: Vec<Vec<MappedCell>> =
+                proc.process_line(&mut graphemes_iter, width);
+
+            let w_index = slice.chars().position(|x| x == 'w').unwrap();
+
+            assert_eq!(rows[0][7].index, Some(w_index));
         };
 
-        assert_eq!(
-            res,
-            vec![
-                vec!["Hello worl"],
-                vec!["d how are "],
-                vec!["you today?"],
-                vec!["\n"],
-            ]
-        );
+        for ln in lines {
+            test(ln, 10);
+        }
     }
 }
