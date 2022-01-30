@@ -13,6 +13,7 @@ use unicode_width::UnicodeWidthStr;
 const TAB_SYMBOL: &str = "\u{21e5}";
 const NL_SYMBOL: &str = "\u{23ce}";
 const SPACE: &str = " ";
+const EMPTY: &str = "";
 
 pub struct SymbolMap {
     pub tab: StyledGrapheme<'static>,
@@ -25,15 +26,15 @@ pub struct BaseLineProcessor {
 
 impl Default for BaseLineProcessor {
     fn default() -> Self {
-        let empty_cell = StyledGrapheme {
-            symbol: SPACE,
+        let plain = |symbol| StyledGrapheme {
+            symbol,
             style: tui::style::Style::default(),
         };
 
         Self {
             symbols: SymbolMap {
-                tab: empty_cell.clone(),
-                nl: empty_cell,
+                tab: plain(SPACE),
+                nl: plain(EMPTY),
             },
         }
     }
@@ -56,18 +57,10 @@ impl BaseLineProcessor {
         &self,
         line: &mut dyn Iterator<Item = StyledGrapheme<'txt>>,
     ) -> Vec<MappedCell<'txt>> {
-        let mut graphemes: Vec<StyledGrapheme> = line.collect();
-        // appending a blank cell for the end of line style case
-        // unconditional to prevent sudden rewrapping on cursor movement
-        graphemes.push(StyledGrapheme {
-            symbol: " ",
-            style: Default::default(),
-        });
-
         let mut column_offset = 0;
         let mut transformed_line: Vec<MappedCell> = vec![];
 
-        for (key_offset, gphm) in graphemes.into_iter().enumerate() {
+        for (key_offset, gphm) in line.enumerate() {
             let remapped_key =
                 self.remap_symbol(column_offset, gphm, key_offset);
             let column_size: usize =
@@ -80,36 +73,6 @@ impl BaseLineProcessor {
         // Self::prefix_line(transformed_line)
     }
 
-    // fn prefix_line(ln: Vec<StyledGrapheme>) -> Vec<StyledGrapheme> {
-    // let mut prefixed = vec![
-    //     StyledGrapheme {
-    //         symbol: "~",
-    //         style: Default::default(),
-    //     },
-    //     StyledGrapheme {
-    //         symbol: " ",
-    //         style: Default::default(),
-    //     },
-    // ];
-    // prefixed.extend(ln);
-    // prefixed
-
-    // ln
-    // }
-
-    // fn apply_sparse_styling<'txt>(
-    //     key_offset: usize,
-    //     mut key_as_graphemes: Vec<StyledGrapheme<'txt>>,
-    //     sparse_styling: &HashMap<usize, tui::style::Style>,
-    // ) -> Vec<StyledGrapheme<'txt>> {
-    //     if let Some(style) = sparse_styling.get(&key_offset) {
-    //         // key_as_graphemes[0].style = *style;
-    //         let mut style_ref = &mut key_as_graphemes[0].style;
-    //         *style_ref = style_ref.patch(*style);
-    //     }
-    //     key_as_graphemes
-    // }
-
     fn wrap_line(
         mapped_cells: Vec<MappedCell>,
         width: u16,
@@ -120,6 +83,9 @@ impl BaseLineProcessor {
 
         for cell in mapped_cells {
             let sym_width = cell.grapheme.symbol.width();
+            if sym_width == 0 {
+                continue;
+            }
             if sym_width + cur_row_width > width as usize {
                 rows.push(cur_row);
                 cur_row = vec![];
@@ -228,13 +194,43 @@ mod tests {
         line_stylizer::BaseLineProcessor,
         utils::types::Coord,
     };
+    use tui::style::{Color, Style};
     use tui::text::StyledGrapheme;
     use unicode_segmentation::UnicodeSegmentation;
+    use unicode_width::UnicodeWidthChar;
+
+    fn process_slice(slice: &str, width: u16) -> Vec<Vec<MappedCell>> {
+        let proc = BaseLineProcessor::default();
+        let mut graphemes_iter =
+            slice.graphemes(true).map(|gp| StyledGrapheme {
+                symbol: gp,
+                style: Default::default(),
+            });
+
+        let rows: Vec<Vec<MappedCell>> =
+            proc.process_line(&mut graphemes_iter, width);
+
+        rows
+    }
+
+    fn expect_rows(expected: &[&str], rows: &[Vec<MappedCell>]) {
+        for (row_index, row) in rows.iter().enumerate() {
+            let expected_ln: Vec<&str> =
+                expected[row_index].graphemes(true).collect();
+            for (cell_index, cell) in row.iter().enumerate() {
+                let mapped_cell = &rows[row_index][cell_index];
+                let expected_grapheme = expected_ln[cell_index];
+
+                assert_eq!(expected_grapheme, mapped_cell.grapheme.symbol);
+                if mapped_cell.index.is_none() {
+                    assert_eq!(mapped_cell.grapheme.symbol, " ");
+                }
+            }
+        }
+    }
 
     #[test]
     fn identity_mapping() {
-        use tui::style::{Color, Style};
-
         let proc = BaseLineProcessor::default();
         let line = "Hello world\n";
 
@@ -254,8 +250,6 @@ mod tests {
 
     #[test]
     fn using_tabs() {
-        use tui::style::{Color, Style};
-
         // 'w' should be mapped to (0, 8) in all cases given width > 8
         let lines = vec![
             "Hell\tworld\n",
@@ -264,26 +258,70 @@ mod tests {
             "Hellooo\tworld\n",
         ];
 
-        let test = |slice: &str, width| {
-            let proc = BaseLineProcessor::default();
-            let default_style = Style::default();
-
-            let mut graphemes_iter =
-                slice.graphemes(true).map(|gp| StyledGrapheme {
-                    symbol: gp,
-                    style: default_style,
-                });
-
-            let rows: Vec<Vec<MappedCell>> =
-                proc.process_line(&mut graphemes_iter, width);
-
-            let w_index = slice.chars().position(|x| x == 'w').unwrap();
-
-            assert_eq!(rows[0][7].index, Some(w_index));
-        };
-
         for ln in lines {
-            test(ln, 10);
+            let rows = process_slice(ln, 10);
+            assert_eq!(
+                rows[0][8].index,
+                Some(ln.chars().position(|c| c == 'w').unwrap())
+            );
         }
+    }
+
+    #[test]
+    fn using_tabs_with_wrapping() {
+        let line = "abc\tdefg\thijk";
+
+        let rows = process_slice(line, 3);
+
+        #[rustfmt::skip]
+        let expected = vec![
+            "abc",
+            " de",
+            "fg ",
+            "   ",
+            "hij",
+            "k"
+        ];
+
+        expect_rows(&expected, &rows);
+    }
+
+    #[test]
+    fn unicode() {
+        let line = "地こそabcd七e祖腰\n";
+
+        let rows = process_slice(line, 5);
+        #[rustfmt::skip]
+        let expected = vec![
+            "地こ",
+            "そabc",
+            "d七e",
+            "祖腰",
+        ];
+        expect_rows(&expected, &rows);
+        assert_eq!(
+            &Some(line.graphemes(true).position(|c| c == "そ").unwrap()),
+            &rows[1][0].index,
+        );
+    }
+
+    #[test]
+    fn unicode_with_tabs() {
+        let line = "地こそ\tabcd\t七e祖腰\n";
+
+        let rows = process_slice(line, 5);
+        #[rustfmt::skip]
+        let expected = vec![
+            "地こ",
+            "そ  a",
+            "bcd  ",
+            "  七e",
+            "祖腰",
+        ];
+        expect_rows(&expected, &rows);
+        assert_eq!(
+            &Some(line.graphemes(true).position(|c| c == "e").unwrap()),
+            &rows[3][3].index,
+        );
     }
 }
