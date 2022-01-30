@@ -7,6 +7,7 @@ use crate::{
 };
 use std::collections::HashMap;
 use std::iter;
+use std::ops::Deref;
 use tui::text::StyledGrapheme;
 use tui::{
     buffer::Buffer,
@@ -64,9 +65,10 @@ impl<'a> EditorRenderer<'a> {
         }
     }
 
-    pub fn content<Lns>(lines: Lns) -> Self
+    pub fn content<Lns, Ref>(lines: Lns) -> Self
     where
-        Lns: Iterator<Item = &'a str>,
+        Lns: IntoIterator<Item = Ref>,
+        Ref: Deref<Target = &'a str>,
     {
         Self {
             text_view: TextView::new().content(lines),
@@ -78,6 +80,7 @@ impl<'a> EditorRenderer<'a> {
             Some(RenderMetadata {
                 lines_rendered,
                 anchor,
+                ..
             }) => {
                 if lines_rendered.is_empty() {
                     anchor

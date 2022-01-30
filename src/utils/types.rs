@@ -6,3 +6,6 @@ pub enum Action {
     Ok,
     Quit,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Coord(pub usize, pub usize);

@@ -1,11 +1,14 @@
+use crate::line_stylizer::BaseLineProcessor;
+use crate::utils::types::Coord;
 use crate::{
     line_processor::LineProcessor, line_stylizer::LineStylizer,
     text_coord::TextCoord,
 };
 use std::cell::RefCell;
 use std::cmp::min;
-use std::ops::Range;
+use std::ops::{Deref, Range};
 use std::{cmp::Ordering, collections::HashMap};
+use tui::widgets::{Paragraph, StatefulWidget};
 use tui::{
     buffer::Buffer,
     layout::Rect,
@@ -15,22 +18,21 @@ use tui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use tui::widgets::{Paragraph, StatefulWidget};
-
 // type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;
 type StyledLineIterator<'a> = Box<dyn Iterator<Item = StyledGrapheme<'a>> + 'a>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Anchor {
     Start(usize),
     Center(usize),
     End(usize),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderMetadata {
     pub lines_rendered: Range<usize>,
     pub anchor: Anchor,
+    pub cursor: Option<Coord>,
 }
 
 /// Lower level, stateless text displaying engine.
@@ -55,7 +57,7 @@ pub struct TextView<'a> {
     /// Option to override the background color after all styles are applied
     bg_color: tui::style::Color,
 
-    cursor: Option<TextCoord>,
+    cursor: Option<Coord>,
 }
 
 impl<'a> TextView<'a> {
@@ -64,7 +66,7 @@ impl<'a> TextView<'a> {
     pub fn new() -> Self {
         Self {
             text_lines: vec![].into(),
-            line_processor: Box::new(LineStylizer),
+            line_processor: Box::new(BaseLineProcessor::default()),
             anchor: Anchor::Start(0),
             sparse_styling: HashMap::new(),
             block: Default::default(),
@@ -73,9 +75,10 @@ impl<'a> TextView<'a> {
         }
     }
 
-    pub fn content<Lns>(mut self, lines: Lns) -> Self
+    pub fn content<Lns, Ref>(mut self, lines: Lns) -> Self
     where
-        Lns: Iterator<Item = &'a str>,
+        Lns: IntoIterator<Item = Ref>,
+        Ref: Deref<Target = &'a str>,
     {
         self.text_lines = lines
             .into_iter()
@@ -83,7 +86,8 @@ impl<'a> TextView<'a> {
                 Box::new(s.graphemes(true).map(|g| StyledGrapheme {
                     symbol: g,
                     style: tui::style::Style::default(),
-                })) as Box<dyn Iterator<Item = StyledGrapheme>>
+                }))
+                    as Box<dyn Iterator<Item = StyledGrapheme<'a>>>
             })
             .collect::<Vec<_>>()
             .into();
@@ -154,65 +158,102 @@ impl<'a> TextView<'a> {
         *area = inner_area;
     }
 
-    fn generate_view(
+    fn render_view(
         &mut self,
         area: Rect,
         meta: &mut Option<RenderMetadata>,
-    ) -> Vec<Vec<StyledGrapheme<'_>>> {
-        match self.anchor {
+        buf: &mut Buffer,
+    ) {
+        let lines = match self.anchor {
             Anchor::Start(anchor) => {
-                self.generate_start_anchor(anchor, area, meta)
+                self.render_start_anchor(anchor, area, meta, buf);
             }
-            Anchor::End(anchor) => self.generate_end_anchor(anchor, area, meta),
+            // Anchor::End(anchor) => self.generate_end_anchor(anchor, area, meta),
             Anchor::Center(anchor) => {
-                self.generate_center_anchor(anchor, area, meta)
+                self.render_center_anchor(anchor, area, meta, buf);
             }
             _ => panic!("Disabled anchors"),
+        };
+    }
+
+    // fn render_start_anchor(
+    //     &mut self,
+    //     anchor: usize,
+    //     area: Rect,
+    //     meta: &mut Option<RenderMetadata>,
+    //     buf: &mut Buffer,
+    // ) {
+    //     let (end_ln, rows) = self.expand_rows_down(anchor, area);
+
+    //     *meta = Some(RenderMetadata {
+    //         lines_rendered: anchor..end_ln,
+    //         anchor: Anchor::Start(anchor),
+    //         cursor: None,
+    //     });
+
+    //     let mut y = 0;
+    //     for line in rows {
+    //         let mut x = 0;
+    //         for StyledGrapheme { symbol, style } in line {
+    //             buf.get_mut(area.left() + x, area.top() + y)
+    //                 .set_symbol(if symbol.is_empty() { " " } else { symbol })
+    //                 .set_style(style);
+    //             x += symbol.width() as u16;
+    //         }
+    //         y += 1;
+    //         if y >= area.height {
+    //             break;
+    //         }
+    //     }
+    // }
+
+    fn render_start_anchor(
+        &mut self,
+        anchor: usize,
+        area: Rect,
+        meta: &mut Option<RenderMetadata>,
+        buf: &mut Buffer,
+    ) {
+        // let (end_ln, rows) = self.expand_rows_down(anchor, area);
+
+        // *meta = Some(RenderMetadata {
+        //     lines_rendered: anchor..end_ln,
+        //     anchor: Anchor::Start(anchor),
+        //     cursor: None,
+        // });
+
+        let total_lines = self.text_lines.borrow().len();
+
+        for current_ln in anchor..total_lines {
+            let line_as_rows = self.line_to_rows(current_ln, area.width);
+            // rows.extend(line_as_rows);
+            // if rows.len() > area.height.into() {
+            //     rows.truncate(area.height.into());
+            //     return (current_ln, rows);
+            // }
         }
+
+        // for y in area.top()..area.top() + area.y {
+        //     for x in area.left()..area.left() + area.x {
+        //         let line_as_rows = self.line_to_rows(current_ln, area.width);
+        //     }
+        // }
     }
 
-    fn generate_start_anchor(
+    fn write_to_buf(
+        rows: Vec<Vec<StyledGrapheme<'_>>>,
+        area: Rect,
+        buf: &mut Buffer,
+    ) {
+    }
+
+    fn render_center_anchor(
         &mut self,
         anchor: usize,
         area: Rect,
         meta: &mut Option<RenderMetadata>,
-    ) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let (end_ln, rows) = self.expand_rows_down(anchor, area);
-
-        *meta = Some(RenderMetadata {
-            lines_rendered: anchor..end_ln,
-            anchor: Anchor::Start(anchor),
-        });
-
-        rows
-    }
-
-    fn generate_end_anchor(
-        &mut self,
-        anchor: usize,
-        area: Rect,
-        meta: &mut Option<RenderMetadata>,
-    ) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let (start_ln, mut rows) = self.expand_rows_up(anchor - 1, area);
-        let area = Rect::new(0, 0, area.width, area.height - rows.len() as u16); // cast should be safe
-        let (end_ln, bottom_rows) = self.expand_rows_down(anchor, area);
-        rows.extend(bottom_rows);
-
-        // passing the actually displayed line range
-        *meta = Some(RenderMetadata {
-            lines_rendered: start_ln..end_ln,
-            anchor: Anchor::End(anchor),
-        });
-
-        rows
-    }
-
-    fn generate_center_anchor(
-        &mut self,
-        anchor: usize,
-        area: Rect,
-        meta: &mut Option<RenderMetadata>,
-    ) -> Vec<Vec<StyledGrapheme<'_>>> {
+        buf: &mut Buffer,
+    ) {
         let half_height_area = Rect::new(0, 0, area.width, area.height / 2);
 
         let (start_ln, mut rows) =
@@ -226,10 +267,45 @@ impl<'a> TextView<'a> {
         *meta = Some(RenderMetadata {
             lines_rendered: start_ln..end_ln,
             anchor: Anchor::Center(anchor),
+            cursor: None,
         });
 
-        rows
+        let mut y = 0;
+        for line in rows {
+            let mut x = 0;
+            for StyledGrapheme { symbol, style } in line {
+                buf.get_mut(area.left() + x, area.top() + y)
+                    .set_symbol(if symbol.is_empty() { " " } else { symbol })
+                    .set_style(style);
+                x += symbol.width() as u16;
+            }
+            y += 1;
+            if y >= area.height {
+                break;
+            }
+        }
     }
+
+    // fn generate_end_anchor(
+    //     &mut self,
+    //     anchor: usize,
+    //     area: Rect,
+    //     meta: &mut Option<RenderMetadata>,
+    // ) -> Vec<Vec<StyledGrapheme<'_>>> {
+    //     let (start_ln, mut rows) = self.expand_rows_up(anchor - 1, area);
+    //     let area = Rect::new(0, 0, area.width, area.height - rows.len() as u16); // cast should be safe
+    //     let (end_ln, bottom_rows) = self.expand_rows_down(anchor, area);
+    //     rows.extend(bottom_rows);
+
+    //     // passing the actually displayed line range
+    //     *meta = Some(RenderMetadata {
+    //         lines_rendered: start_ln..end_ln,
+    //         anchor: Anchor::End(anchor),
+    //         cursor: None,
+    //     });
+
+    //     rows
+    // }
 
     /// Generates rows downwards and returns the line nb past the last rendered line along with the rows
     fn expand_rows_down(
@@ -281,7 +357,7 @@ impl<'a> TextView<'a> {
         (0, rows)
     }
 
-    fn extract_ln_styling(
+    fn get_styling(
         map: &HashMap<TextCoord, tui::style::Style>,
         ln_offset: usize,
     ) -> HashMap<usize, tui::style::Style> {
@@ -297,9 +373,14 @@ impl<'a> TextView<'a> {
         line_nb: usize,
         width: u16,
     ) -> Vec<Vec<StyledGrapheme<'_>>> {
+        let styling = Self::get_styling(&self.sparse_styling, line_nb);
         let mut line = &mut self.text_lines.borrow_mut()[line_nb];
-        let styling = Self::extract_ln_styling(&self.sparse_styling, line_nb);
         self.line_processor.process_line(line, styling, width)
+    }
+
+    pub fn cursor(mut self, coord: Coord) -> TextView<'a> {
+        self.cursor = Some(coord);
+        self
     }
 }
 
@@ -331,20 +412,170 @@ impl<'a> StatefulWidget for TextView<'a> {
             }
         }
 
-        let lines = self.generate_view(area, state);
-        let mut y = 0;
-        for line in lines {
-            let mut x = 0;
-            for StyledGrapheme { symbol, style } in line {
-                buf.get_mut(area.left() + x, area.top() + y)
-                    .set_symbol(if symbol.is_empty() { " " } else { symbol })
-                    .set_style(style);
-                x += symbol.width() as u16;
+        self.render_view(area, state, buf);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::utils::types::Coord;
+
+    use super::*;
+    use tui::{backend::TestBackend, buffer::Buffer, widgets::Block, Terminal};
+
+    fn create_term(width: u16, height: u16) -> Terminal<TestBackend> {
+        let backend = TestBackend::new(width, height);
+        Terminal::new(backend).unwrap()
+    }
+
+    fn draw(
+        terminal: &mut Terminal<TestBackend>,
+        text_view: TextView,
+        state: &mut Option<RenderMetadata>,
+    ) {
+        terminal
+            .draw(|f| {
+                f.render_stateful_widget(text_view, f.size(), state);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn anchor_start() {
+        #[rustfmt::skip]
+        let lines = [
+            "Hello world!\n",
+            "How are you?"
+        ];
+
+        let text_view =
+            TextView::new().content(&lines).anchor(Anchor::Start(0));
+        let mut metadata: Option<RenderMetadata> = None;
+
+        let mut terminal = create_term(7, 4);
+        draw(&mut terminal, text_view, &mut metadata);
+
+        #[rustfmt::skip]
+        let expected = Buffer::with_lines(vec![
+            "Hello w",
+            "orld!\n",
+            "How are",
+            " you?  ",
+        ]);
+
+        terminal.backend().assert_buffer(&expected);
+        assert_eq!(
+            metadata.unwrap(),
+            RenderMetadata {
+                lines_rendered: 0..2,
+                anchor: Anchor::Start(0),
+                cursor: None,
             }
-            y += 1;
-            if y >= area.height {
-                break;
+        );
+    }
+
+    #[test]
+    fn anchor_start_line_overflow() {
+        #[rustfmt::skip]
+        let lines = [
+            "Hello world!\n",
+            "How are you?"
+        ];
+
+        let text_view =
+            TextView::new().content(&lines).anchor(Anchor::Start(0));
+        let mut metadata: Option<RenderMetadata> = None;
+
+        let mut terminal = create_term(4, 4);
+        draw(&mut terminal, text_view, &mut metadata);
+
+        #[rustfmt::skip]
+        let expected = Buffer::with_lines(vec![
+            "Hell",
+            "o wo",
+            "rld!",
+            "\n"
+        ]);
+
+        terminal.backend().assert_buffer(&expected);
+        assert_eq!(
+            metadata.unwrap(),
+            RenderMetadata {
+                lines_rendered: 0..1,
+                anchor: Anchor::Start(0),
+                cursor: None
             }
-        }
+        );
+    }
+
+    #[test]
+    fn anchor_start_midline_overflow() {
+        #[rustfmt::skip]
+        let lines = [
+            "Hello world!\n",
+            "How are you?"
+        ];
+
+        let text_view =
+            TextView::new().content(&lines).anchor(Anchor::Start(0));
+        let mut metadata: Option<RenderMetadata> = None;
+
+        let mut terminal = create_term(4, 5);
+        draw(&mut terminal, text_view, &mut metadata);
+
+        #[rustfmt::skip]
+        let expected = Buffer::with_lines(vec![
+            "Hell",
+            "o wo",
+            "rld!",
+            "    ",
+            "How "
+        ]);
+
+        terminal.backend().assert_buffer(&expected);
+        assert_eq!(
+            metadata.unwrap(),
+            RenderMetadata {
+                lines_rendered: 0..1,
+                anchor: Anchor::Start(0),
+                cursor: None
+            }
+        );
+    }
+
+    #[test]
+    fn anchor_start_cursor() {
+        #[rustfmt::skip]
+        let lines = [
+            "Hello world!\n",
+            "How are you?"
+        ];
+
+        let text_view = TextView::new()
+            .content(&lines)
+            .anchor(Anchor::Start(0))
+            .cursor(Coord(0, 6));
+
+        let mut terminal = create_term(4, 5);
+        let mut metadata: Option<RenderMetadata> = None;
+        draw(&mut terminal, text_view, &mut metadata);
+
+        #[rustfmt::skip]
+        let expected_buffer = Buffer::with_lines(vec![
+            "Hell",
+            "o wo",
+            "rld!",
+            "    ",
+            "How "
+        ]);
+
+        let expected_state = Some(RenderMetadata {
+            lines_rendered: 0..1,
+            anchor: Anchor::Start(0),
+            cursor: Some(Coord(1, 2)),
+        });
+
+        terminal.backend().assert_buffer(&expected_buffer);
+        assert_eq!(&metadata, &expected_state);
     }
 }
