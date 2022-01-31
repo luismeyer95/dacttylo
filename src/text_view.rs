@@ -33,7 +33,7 @@ pub enum Anchor {
 pub struct RenderMetadata {
     pub lines_rendered: Range<usize>,
     pub anchor: Anchor,
-    pub cursor: Option<Coord>,
+    pub cursor: Option<Coord<u16>>,
 }
 
 /// Lower level, stateless text displaying engine.
@@ -58,7 +58,7 @@ pub struct TextView<'a> {
     /// Option to override the background color after all styles are applied
     bg_color: tui::style::Color,
 
-    cursor: Option<Coord>,
+    cursor: Option<Coord<u16>>,
 }
 
 impl<'a> TextView<'a> {
@@ -224,9 +224,16 @@ impl<'a> TextView<'a> {
         // });
 
         let total_lines = self.text_lines.borrow().len();
+        let mut y_offset = area.top();
 
         for current_ln in anchor..total_lines {
             let line_as_rows = self.line_to_rows(current_ln, area.width);
+            let row_count = line_as_rows.len() as u16;
+
+            let offset = Coord(y_offset, area.left());
+            self.write_to_buf(offset, line_as_rows, buf);
+            y_offset += row_count;
+
             // rows.extend(line_as_rows);
             // if rows.len() > area.height.into() {
             //     rows.truncate(area.height.into());
@@ -242,11 +249,26 @@ impl<'a> TextView<'a> {
     }
 
     fn write_to_buf(
-        rows: Vec<Vec<StyledGrapheme<'_>>>,
-        area: Rect,
+        &self,
+        offset: Coord<u16>,
+        rows: Vec<Vec<MappedCell<'_>>>,
         buf: &mut Buffer,
     ) {
+        for (irow, row) in rows.iter().enumerate() {
+            for (icell, cell) in row.iter().enumerate() {
+                buf.get_mut(offset.1 + icell as u16, offset.0 + irow as u16)
+                    .set_symbol(if cell.grapheme.symbol.is_empty() {
+                        " "
+                    } else {
+                        cell.grapheme.symbol
+                    })
+                    .set_style(cell.grapheme.style);
+            }
+        }
     }
+
+    #[inline]
+    fn compute_cell(&self, offset: Coord<u16>, mapped_cell: &MappedCell) {}
 
     // fn render_center_anchor(
     //     &mut self,
@@ -379,7 +401,7 @@ impl<'a> TextView<'a> {
         self.line_processor.process_line(line, width)
     }
 
-    pub fn cursor(mut self, coord: Coord) -> TextView<'a> {
+    pub fn cursor(mut self, coord: Coord<u16>) -> TextView<'a> {
         self.cursor = Some(coord);
         self
     }

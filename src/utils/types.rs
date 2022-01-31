@@ -8,4 +8,4 @@ pub enum Action {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Coord(pub usize, pub usize);
+pub struct Coord<T>(pub T, pub T);
