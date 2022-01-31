@@ -1,4 +1,3 @@
-use crate::line_processor::MappedCell;
 use crate::line_stylizer::BaseLineProcessor;
 use crate::utils::types::Coord;
 use crate::{
@@ -9,7 +8,6 @@ use std::cell::RefCell;
 use std::cmp::min;
 use std::ops::{Deref, Range};
 use std::{cmp::Ordering, collections::HashMap};
-use tui::widgets::{Paragraph, StatefulWidget};
 use tui::{
     buffer::Buffer,
     layout::Rect,
@@ -18,6 +16,8 @@ use tui::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
+
+use tui::widgets::{Paragraph, StatefulWidget};
 
 // type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;
 type StyledLineIterator<'a> = Box<dyn Iterator<Item = StyledGrapheme<'a>> + 'a>;
@@ -159,228 +159,137 @@ impl<'a> TextView<'a> {
         *area = inner_area;
     }
 
-    fn render_view(
+    fn generate_view(
         &mut self,
         area: Rect,
         meta: &mut Option<RenderMetadata>,
-        buf: &mut Buffer,
-    ) {
-        let lines = match self.anchor {
+    ) -> Vec<Vec<StyledGrapheme<'_>>> {
+        match self.anchor {
             Anchor::Start(anchor) => {
-                self.render_start_anchor(anchor, area, meta, buf);
+                self.generate_start_anchor(anchor, area, meta)
             }
-            // Anchor::End(anchor) => self.generate_end_anchor(anchor, area, meta),
-            // Anchor::Center(anchor) => {
-            //     self.render_center_anchor(anchor, area, meta, buf);
-            // }
+            Anchor::End(anchor) => self.generate_end_anchor(anchor, area, meta),
+            Anchor::Center(anchor) => {
+                self.generate_center_anchor(anchor, area, meta)
+            }
             _ => panic!("Disabled anchors"),
-        };
+        }
     }
 
-    // fn render_start_anchor(
-    //     &mut self,
-    //     anchor: usize,
-    //     area: Rect,
-    //     meta: &mut Option<RenderMetadata>,
-    //     buf: &mut Buffer,
-    // ) {
-    //     let (end_ln, rows) = self.expand_rows_down(anchor, area);
-
-    //     *meta = Some(RenderMetadata {
-    //         lines_rendered: anchor..end_ln,
-    //         anchor: Anchor::Start(anchor),
-    //         cursor: None,
-    //     });
-
-    //     let mut y = 0;
-    //     for line in rows {
-    //         let mut x = 0;
-    //         for StyledGrapheme { symbol, style } in line {
-    //             buf.get_mut(area.left() + x, area.top() + y)
-    //                 .set_symbol(if symbol.is_empty() { " " } else { symbol })
-    //                 .set_style(style);
-    //             x += symbol.width() as u16;
-    //         }
-    //         y += 1;
-    //         if y >= area.height {
-    //             break;
-    //         }
-    //     }
-    // }
-
-    fn render_start_anchor(
+    fn generate_start_anchor(
         &mut self,
         anchor: usize,
         area: Rect,
         meta: &mut Option<RenderMetadata>,
-        buf: &mut Buffer,
-    ) {
-        // let (end_ln, rows) = self.expand_rows_down(anchor, area);
+    ) -> Vec<Vec<StyledGrapheme<'_>>> {
+        let (end_ln, rows) = self.expand_rows_down(anchor, area);
 
-        // *meta = Some(RenderMetadata {
-        //     lines_rendered: anchor..end_ln,
-        //     anchor: Anchor::Start(anchor),
-        //     cursor: None,
-        // });
+        *meta = Some(RenderMetadata {
+            lines_rendered: anchor..end_ln,
+            anchor: Anchor::Start(anchor),
+            cursor: None,
+        });
 
-        let total_lines = self.text_lines.borrow().len();
-        let mut y_offset = area.top();
-
-        for current_ln in anchor..total_lines {
-            let line_as_rows = self.line_to_rows(current_ln, area.width);
-            let row_count = line_as_rows.len() as u16;
-
-            let offset = Coord(y_offset, area.left());
-            self.write_to_buf(offset, line_as_rows, buf);
-            y_offset += row_count;
-
-            // rows.extend(line_as_rows);
-            // if rows.len() > area.height.into() {
-            //     rows.truncate(area.height.into());
-            //     return (current_ln, rows);
-            // }
-        }
-
-        // for y in area.top()..area.top() + area.y {
-        //     for x in area.left()..area.left() + area.x {
-        //         let line_as_rows = self.line_to_rows(current_ln, area.width);
-        //     }
-        // }
+        rows
     }
 
-    fn write_to_buf(
-        &self,
-        offset: Coord<u16>,
-        rows: Vec<Vec<MappedCell<'_>>>,
-        buf: &mut Buffer,
-    ) {
-        for (irow, row) in rows.iter().enumerate() {
-            for (icell, cell) in row.iter().enumerate() {
-                buf.get_mut(offset.1 + icell as u16, offset.0 + irow as u16)
-                    .set_symbol(if cell.grapheme.symbol.is_empty() {
-                        " "
-                    } else {
-                        cell.grapheme.symbol
-                    })
-                    .set_style(cell.grapheme.style);
-            }
-        }
+    fn generate_end_anchor(
+        &mut self,
+        anchor: usize,
+        area: Rect,
+        meta: &mut Option<RenderMetadata>,
+    ) -> Vec<Vec<StyledGrapheme<'_>>> {
+        let (start_ln, mut rows) = self.expand_rows_up(anchor - 1, area);
+        let area = Rect::new(0, 0, area.width, area.height - rows.len() as u16); // cast should be safe
+        let (end_ln, bottom_rows) = self.expand_rows_down(anchor, area);
+        rows.extend(bottom_rows);
+
+        // passing the actually displayed line range
+        *meta = Some(RenderMetadata {
+            lines_rendered: start_ln..end_ln,
+            anchor: Anchor::End(anchor),
+            cursor: None,
+        });
+
+        rows
     }
 
-    #[inline]
-    fn compute_cell(&self, offset: Coord<u16>, mapped_cell: &MappedCell) {}
+    fn generate_center_anchor(
+        &mut self,
+        anchor: usize,
+        area: Rect,
+        meta: &mut Option<RenderMetadata>,
+    ) -> Vec<Vec<StyledGrapheme<'_>>> {
+        let half_height_area = Rect::new(0, 0, area.width, area.height / 2);
 
-    // fn render_center_anchor(
-    //     &mut self,
-    //     anchor: usize,
-    //     area: Rect,
-    //     meta: &mut Option<RenderMetadata>,
-    //     buf: &mut Buffer,
-    // ) {
-    //     let half_height_area = Rect::new(0, 0, area.width, area.height / 2);
+        let (start_ln, mut rows) =
+            self.expand_rows_up(anchor, half_height_area);
 
-    //     let (start_ln, mut rows) =
-    //         self.expand_rows_up(anchor, half_height_area);
+        let area = Rect::new(0, 0, area.width, area.height - rows.len() as u16); // cast should be safe
+        let (end_ln, bottom_rows) = self.expand_rows_down(anchor + 1, area);
+        rows.extend(bottom_rows);
 
-    //     let area = Rect::new(0, 0, area.width, area.height - rows.len() as u16); // cast should be safe
-    //     let (end_ln, bottom_rows) = self.expand_rows_down(anchor + 1, area);
-    //     rows.extend(bottom_rows);
+        // passing the actually displayed line range
+        *meta = Some(RenderMetadata {
+            lines_rendered: start_ln..end_ln,
+            anchor: Anchor::Center(anchor),
+            cursor: None,
+        });
 
-    //     // passing the actually displayed line range
-    //     *meta = Some(RenderMetadata {
-    //         lines_rendered: start_ln..end_ln,
-    //         anchor: Anchor::Center(anchor),
-    //         cursor: None,
-    //     });
-
-    //     let mut y = 0;
-    //     for line in rows {
-    //         let mut x = 0;
-    //         for StyledGrapheme { symbol, style } in line {
-    //             buf.get_mut(area.left() + x, area.top() + y)
-    //                 .set_symbol(if symbol.is_empty() { " " } else { symbol })
-    //                 .set_style(style);
-    //             x += symbol.width() as u16;
-    //         }
-    //         y += 1;
-    //         if y >= area.height {
-    //             break;
-    //         }
-    //     }
-    // }
-
-    // fn generate_end_anchor(
-    //     &mut self,
-    //     anchor: usize,
-    //     area: Rect,
-    //     meta: &mut Option<RenderMetadata>,
-    // ) -> Vec<Vec<StyledGrapheme<'_>>> {
-    //     let (start_ln, mut rows) = self.expand_rows_up(anchor - 1, area);
-    //     let area = Rect::new(0, 0, area.width, area.height - rows.len() as u16); // cast should be safe
-    //     let (end_ln, bottom_rows) = self.expand_rows_down(anchor, area);
-    //     rows.extend(bottom_rows);
-
-    //     // passing the actually displayed line range
-    //     *meta = Some(RenderMetadata {
-    //         lines_rendered: start_ln..end_ln,
-    //         anchor: Anchor::End(anchor),
-    //         cursor: None,
-    //     });
-
-    //     rows
-    // }
+        rows
+    }
 
     /// Generates rows downwards and returns the line nb past the last rendered line along with the rows
-    // fn expand_rows_down(
-    //     &self,
-    //     start_ln: usize,
-    //     area: Rect,
-    // ) -> (usize, Vec<Vec<StyledGrapheme<'_>>>) {
-    //     let total_lines = self.text_lines.borrow().len();
-    //     let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
+    fn expand_rows_down(
+        &self,
+        start_ln: usize,
+        area: Rect,
+    ) -> (usize, Vec<Vec<StyledGrapheme<'_>>>) {
+        let total_lines = self.text_lines.borrow().len();
+        let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
 
-    //     for current_ln in start_ln..total_lines {
-    //         let line_as_rows = self.line_to_rows(current_ln, area.width);
-    //         rows.extend(line_as_rows);
-    //         if rows.len() > area.height.into() {
-    //             rows.truncate(area.height.into());
-    //             return (current_ln, rows);
-    //         }
-    //     }
+        for current_ln in start_ln..total_lines {
+            let line_as_rows = self.line_to_rows(current_ln, area.width);
+            rows.extend(line_as_rows);
+            if rows.len() > area.height.into() {
+                rows.truncate(area.height.into());
+                return (current_ln, rows);
+            }
+        }
 
-    //     (total_lines, rows)
-    // }
+        (total_lines, rows)
+    }
 
     /// Generates rows upwards and returns the lowest line nb to be rendered along with the rows
-    // fn expand_rows_up(
-    //     &self,
-    //     start_ln: usize,
-    //     area: Rect,
-    // ) -> (usize, Vec<Vec<StyledGrapheme<'_>>>) {
-    //     let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
+    fn expand_rows_up(
+        &self,
+        start_ln: usize,
+        area: Rect,
+    ) -> (usize, Vec<Vec<StyledGrapheme<'_>>>) {
+        let mut rows: Vec<Vec<StyledGrapheme<'_>>> = vec![];
 
-    //     for current_ln in (0..=start_ln).rev() {
-    //         let mut line_as_rows = self.line_to_rows(current_ln, area.width);
-    //         // if line_as_rows.len() + rows.len() > area.height as usize {
-    //         //     return (current_ln + 1, rows);
-    //         // }
-    //         line_as_rows.extend(rows);
-    //         rows = line_as_rows;
+        for current_ln in (0..=start_ln).rev() {
+            let mut line_as_rows = self.line_to_rows(current_ln, area.width);
+            // if line_as_rows.len() + rows.len() > area.height as usize {
+            //     return (current_ln + 1, rows);
+            // }
+            line_as_rows.extend(rows);
+            rows = line_as_rows;
 
-    //         match rows.len().cmp(&(area.height as usize)) {
-    //             Ordering::Equal => return (current_ln, rows),
-    //             Ordering::Greater => {
-    //                 rows.drain(0..(rows.len() - area.height as usize));
-    //                 return (current_ln + 1, rows);
-    //             }
-    //             _ => {}
-    //         }
-    //     }
+            match rows.len().cmp(&(area.height as usize)) {
+                Ordering::Equal => return (current_ln, rows),
+                Ordering::Greater => {
+                    rows.drain(0..(rows.len() - area.height as usize));
+                    return (current_ln + 1, rows);
+                }
+                _ => {}
+            }
+        }
 
-    //     (0, rows)
-    // }
+        (0, rows)
+    }
 
-    fn get_styling(
+    fn extract_ln_styling(
         map: &HashMap<TextCoord, tui::style::Style>,
         ln_offset: usize,
     ) -> HashMap<usize, tui::style::Style> {
@@ -395,13 +304,28 @@ impl<'a> TextView<'a> {
         &self,
         line_nb: usize,
         width: u16,
-    ) -> Vec<Vec<MappedCell<'_>>> {
-        let styling = Self::get_styling(&self.sparse_styling, line_nb);
+    ) -> Vec<Vec<StyledGrapheme<'_>>> {
         let mut line = &mut self.text_lines.borrow_mut()[line_nb];
-        self.line_processor.process_line(line, width)
+        let styling = Self::extract_ln_styling(&self.sparse_styling, line_nb);
+        let rows = self.line_processor.process_line(line, width);
+        rows.into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .map(|mut cell| {
+                        if let Some(style) =
+                            cell.index.and_then(|i| styling.get(&i))
+                        {
+                            cell.grapheme.style =
+                                cell.grapheme.style.patch(*style);
+                        }
+                        cell.grapheme
+                    })
+                    .collect()
+            })
+            .collect()
     }
 
-    pub fn cursor(mut self, coord: Coord<u16>) -> TextView<'a> {
+    pub fn cursor(mut self, coord: Coord<u16>) -> Self {
         self.cursor = Some(coord);
         self
     }
@@ -435,7 +359,21 @@ impl<'a> StatefulWidget for TextView<'a> {
             }
         }
 
-        self.render_view(area, state, buf);
+        let lines = self.generate_view(area, state);
+        let mut y = 0;
+        for line in lines {
+            let mut x = 0;
+            for StyledGrapheme { symbol, style } in line {
+                buf.get_mut(area.left() + x, area.top() + y)
+                    .set_symbol(if symbol.is_empty() { " " } else { symbol })
+                    .set_style(style);
+                x += symbol.width() as u16;
+            }
+            y += 1;
+            if y >= area.height {
+                break;
+            }
+        }
     }
 }
 
