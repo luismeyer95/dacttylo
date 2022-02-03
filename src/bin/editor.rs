@@ -82,10 +82,16 @@ fn run_app<B: Backend>(
         let renderer = EditorRenderer::content(lines);
 
         editor_view.focus(editor.get_cursor());
+        let cursor = editor_view
+            .last_render
+            .as_ref()
+            .and_then(|meta| meta.cursor);
 
         terminal.draw(|f| {
-            // f.set_cursor(5, 5);
             f.render_stateful_widget(renderer, f.size(), &mut editor_view);
+            if let Some(cursor) = cursor {
+                f.set_cursor(cursor.1, cursor.0);
+            }
         })?;
 
         let timeout = tick_rate

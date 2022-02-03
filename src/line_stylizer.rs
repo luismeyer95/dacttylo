@@ -1,5 +1,5 @@
 use crate::{
-    line_processor::{LineProcessor, MappedCell},
+    line_processor::LineProcessor,
     utils::{
         log,
         reflow::{LineComposer, WordWrapper},
@@ -46,7 +46,7 @@ impl LineProcessor for BaseLineProcessor {
         line: &mut dyn Iterator<Item = StyledGrapheme<'txt>>,
         // sparse_styling: HashMap<usize, tui::style::Style>,
         width: u16,
-    ) -> Vec<Vec<MappedCell<'txt>>> {
+    ) -> Vec<Vec<StyledGrapheme<'txt>>> {
         let line = self.transform_line(line);
         Self::wrap_line(line, width)
     }
@@ -56,15 +56,17 @@ impl BaseLineProcessor {
     fn transform_line<'txt>(
         &self,
         line: &mut dyn Iterator<Item = StyledGrapheme<'txt>>,
-    ) -> Vec<MappedCell<'txt>> {
+    ) -> Vec<(StyledGrapheme<'txt>, Option<usize>)> {
         let mut column_offset = 0;
-        let mut transformed_line: Vec<MappedCell> = vec![];
+        let mut transformed_line: Vec<(StyledGrapheme, Option<usize>)> = vec![];
 
         for (key_offset, gphm) in line.enumerate() {
             let remapped_key =
                 self.remap_symbol(column_offset, gphm, key_offset);
-            let column_size: usize =
-                remapped_key.iter().map(|k| k.grapheme.symbol.width()).sum();
+            let column_size: usize = remapped_key
+                .iter()
+                .map(|(grapheme, _)| grapheme.symbol.width())
+                .sum();
             transformed_line.extend(remapped_key);
             column_offset += column_size;
         }
@@ -74,15 +76,15 @@ impl BaseLineProcessor {
     }
 
     fn wrap_line(
-        mapped_cells: Vec<MappedCell>,
+        mapped_cells: Vec<(StyledGrapheme, Option<usize>)>,
         width: u16,
-    ) -> Vec<Vec<MappedCell>> {
-        let mut rows: Vec<Vec<MappedCell>> = Vec::with_capacity(16);
-        let mut cur_row: Vec<MappedCell> = Vec::with_capacity(16);
+    ) -> Vec<Vec<(StyledGrapheme, Option<usize>)>> {
+        let mut rows = Vec::with_capacity(16);
+        let mut cur_row = Vec::with_capacity(16);
         let mut cur_row_width = 0;
 
         for cell in mapped_cells {
-            let sym_width = cell.grapheme.symbol.width();
+            let sym_width = cell.0.symbol.width();
             if sym_width == 0 {
                 continue;
             }
@@ -107,11 +109,11 @@ impl BaseLineProcessor {
         inline_index: usize,
         grapheme: StyledGrapheme<'txt>,
         key_offset: usize,
-    ) -> Vec<MappedCell<'txt>> {
+    ) -> Vec<(StyledGrapheme<'txt>, Option<usize>)> {
         match grapheme.symbol {
             "\n" => self.remap_newline(grapheme, key_offset),
             "\t" => self.remap_tab(grapheme, inline_index, key_offset),
-            _ => vec![MappedCell::new(Some(key_offset), grapheme)],
+            _ => vec![(grapheme, Some(key_offset))],
         }
     }
 
@@ -120,26 +122,26 @@ impl BaseLineProcessor {
         grapheme: StyledGrapheme,
         column_index: usize,
         key_offset: usize,
-    ) -> Vec<MappedCell<'txt>> {
+    ) -> Vec<(StyledGrapheme<'txt>, Option<usize>)> {
         let tab_width = (4 - column_index % 4) as u8;
 
-        let mapped_tab = MappedCell::new(
-            Some(key_offset),
+        let mapped_tab = (
             StyledGrapheme {
                 symbol: self.symbols.tab.symbol,
                 style: grapheme.style.patch(self.symbols.tab.style),
             },
+            Some(key_offset),
         );
 
         let mut tab = vec![mapped_tab];
 
         tab.extend(vec![
-            MappedCell::new(
-                None,
+            (
                 StyledGrapheme {
                     symbol: " ",
                     style: grapheme.style
-                }
+                },
+                None,
             );
             (tab_width - 1) as usize
         ]);
@@ -151,13 +153,13 @@ impl BaseLineProcessor {
         &self,
         grapheme: StyledGrapheme,
         key_offset: usize,
-    ) -> Vec<MappedCell<'txt>> {
-        let mapped_nl = MappedCell::new(
-            Some(key_offset),
+    ) -> Vec<(StyledGrapheme<'txt>, Option<usize>)> {
+        let mapped_nl = (
             StyledGrapheme {
                 symbol: self.symbols.nl.symbol,
                 style: grapheme.style.patch(self.symbols.nl.style),
             },
+            Some(key_offset),
         );
         vec![mapped_nl]
     }
@@ -170,7 +172,7 @@ impl LineProcessor for LineStylizer {
         &self,
         line: &mut dyn Iterator<Item = StyledGrapheme<'txt>>,
         width: u16,
-    ) -> Vec<Vec<MappedCell<'txt>>> {
+    ) -> Vec<Vec<(StyledGrapheme<'txt>, Option<usize>)>> {
         let yellow = |symbol| StyledGrapheme {
             style: tui::style::Style::default().fg(tui::style::Color::Yellow),
             symbol,
@@ -190,8 +192,7 @@ impl LineProcessor for LineStylizer {
 #[cfg(test)]
 mod tests {
     use crate::{
-        line_processor::{LineProcessor, MappedCell},
-        line_stylizer::BaseLineProcessor,
+        line_processor::LineProcessor, line_stylizer::BaseLineProcessor,
         utils::types::Coord,
     };
     use tui::style::{Color, Style};
@@ -199,7 +200,10 @@ mod tests {
     use unicode_segmentation::UnicodeSegmentation;
     use unicode_width::UnicodeWidthChar;
 
-    fn process_slice(slice: &str, width: u16) -> Vec<Vec<MappedCell>> {
+    fn process_slice(
+        slice: &str,
+        width: u16,
+    ) -> Vec<Vec<(StyledGrapheme, Option<usize>)>> {
         let proc = BaseLineProcessor::default();
         let mut graphemes_iter =
             slice.graphemes(true).map(|gp| StyledGrapheme {
@@ -207,23 +211,26 @@ mod tests {
                 style: Default::default(),
             });
 
-        let rows: Vec<Vec<MappedCell>> =
+        let rows: Vec<Vec<(StyledGrapheme, Option<usize>)>> =
             proc.process_line(&mut graphemes_iter, width);
 
         rows
     }
 
-    fn expect_rows(expected: &[&str], rows: &[Vec<MappedCell>]) {
+    fn expect_rows(
+        expected: &[&str],
+        rows: &[Vec<(StyledGrapheme, Option<usize>)>],
+    ) {
         for (row_index, row) in rows.iter().enumerate() {
             let expected_ln: Vec<&str> =
                 expected[row_index].graphemes(true).collect();
-            for (cell_index, cell) in row.iter().enumerate() {
+            for (cell_index, (grapheme, index)) in row.iter().enumerate() {
                 let mapped_cell = &rows[row_index][cell_index];
                 let expected_grapheme = expected_ln[cell_index];
 
-                assert_eq!(expected_grapheme, mapped_cell.grapheme.symbol);
-                if mapped_cell.index.is_none() {
-                    assert_eq!(mapped_cell.grapheme.symbol, " ");
+                assert_eq!(expected_grapheme, grapheme.symbol);
+                if index.is_none() {
+                    assert_eq!(grapheme.symbol, " ");
                 }
             }
         }
@@ -240,11 +247,13 @@ mod tests {
                 style: Default::default(),
             });
 
-        let res: Vec<Vec<MappedCell>> =
+        let res: Vec<Vec<(StyledGrapheme, Option<usize>)>> =
             proc.process_line(&mut graphemes_iter, 4);
 
-        for (index, cell) in res.into_iter().flatten().enumerate() {
-            assert_eq!(Some(index), cell.index);
+        for (index, (grapheme, mapped_index)) in
+            res.into_iter().flatten().enumerate()
+        {
+            assert_eq!(Some(index), mapped_index);
         }
     }
 
@@ -261,7 +270,7 @@ mod tests {
         for ln in lines {
             let rows = process_slice(ln, 10);
             assert_eq!(
-                rows[0][8].index,
+                rows[0][8].1,
                 Some(ln.chars().position(|c| c == 'w').unwrap())
             );
         }
@@ -301,7 +310,7 @@ mod tests {
         expect_rows(&expected, &rows);
         assert_eq!(
             &Some(line.graphemes(true).position(|c| c == "そ").unwrap()),
-            &rows[1][0].index,
+            &rows[1][0].1,
         );
     }
 
@@ -321,7 +330,7 @@ mod tests {
         expect_rows(&expected, &rows);
         assert_eq!(
             &Some(line.graphemes(true).position(|c| c == "e").unwrap()),
-            &rows[3][3].index,
+            &rows[3][3].1,
         );
     }
 }

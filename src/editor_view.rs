@@ -106,17 +106,13 @@ impl<'a> StatefulWidget for EditorRenderer<'a> {
         // let eggshell = Color::Rgb(255, 239, 214);
         // let darkblue = Color::Rgb(0, 27, 46);
 
-        let cursor = iter::once((
-            TextCoord::new(state.focus_coord.ln, state.focus_coord.x),
-            tui::style::Style::default()
-                .bg(Color::Black)
-                .fg(Color::White),
-        ));
+        let cursor = TextCoord::new(state.focus_coord.ln, state.focus_coord.x);
 
         let view = self
             .text_view
             .anchor(anchor)
-            .sparse_styling(HashMap::<_, _>::from_iter(cursor));
+            // .sparse_styling(HashMap::<_, _>::from_iter(cursor))
+            .cursor(cursor);
 
         view.render(area, buf, &mut state.last_render);
     }
