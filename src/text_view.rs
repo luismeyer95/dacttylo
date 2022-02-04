@@ -4,7 +4,7 @@ use crate::{
 };
 use std::cell::RefCell;
 use std::cmp::min;
-use std::ops::Range;
+use std::ops::{Deref, Range};
 use std::{cmp::Ordering, collections::HashMap};
 use tui::{
     buffer::Buffer,
@@ -73,9 +73,10 @@ impl<'a> TextView<'a> {
         }
     }
 
-    pub fn content<Lns>(mut self, lines: Lns) -> Self
+    pub fn content<Lns, Ref>(mut self, lines: Lns) -> Self
     where
-        Lns: Iterator<Item = &'a str>,
+        Lns: IntoIterator<Item = Ref>,
+        Ref: Deref<Target = &'a str>,
     {
         self.text_lines = lines
             .into_iter()

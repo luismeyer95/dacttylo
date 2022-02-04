@@ -79,7 +79,7 @@ fn run_app<B: Backend>(
         let lines = &editor.get_lines();
         // let hl_lines = hl_builder.clone().build()?.highlight(lines);
 
-        let renderer = EditorRenderer::content(lines.iter().copied());
+        let renderer = EditorRenderer::content(lines);
 
         editor_view.focus(editor.get_cursor());
 
