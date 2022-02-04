@@ -307,12 +307,7 @@ impl<'a> Widget for TextView<'a> {
         }
 
         let bg_style = tui::style::Style::default().bg(self.bg_color);
-        for y in 0..area.height {
-            for x in 0..area.width {
-                let cell = buf.get_mut(area.left() + x, area.top() + y);
-                cell.set_style(cell.style().patch(bg_style));
-            }
-        }
+        buf.set_style(area, bg_style);
 
         let lines = self.generate_view(area);
         let mut y = 0;

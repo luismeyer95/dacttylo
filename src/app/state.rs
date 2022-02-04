@@ -4,6 +4,8 @@ use std::{collections::HashMap, error::Error};
 
 use InputResult::*;
 
+use crate::{text_coord::TextCoord, utils::helpers};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Progress {
     Ongoing,
@@ -81,6 +83,7 @@ impl<'txt> PlayerState<'txt> {
 
 pub struct DacttyloGameState<'txt> {
     text: &'txt str,
+
     main_player: String,
     players: HashMap<String, PlayerState<'txt>>,
 }
@@ -153,6 +156,38 @@ impl<'txt> DacttyloGameState<'txt> {
 
     pub fn text(&self) -> &'txt str {
         self.text
+    }
+
+    pub fn get_cursor_coords(&self) -> HashMap<TextCoord, Option<InputResult>> {
+        let text_lines = self.text.split_inclusive('\n').collect::<Vec<_>>();
+
+        let mut player_tuples = self
+            .players()
+            .iter()
+            .map(|(_, pstate)| (pstate.cursor(), pstate.last_input()))
+            .collect::<Vec<_>>();
+
+        player_tuples.sort_by(|(ca, _), (cb, _)| ca.cmp(cb));
+        let (indexes, inputs): (Vec<usize>, Vec<Option<InputResult>>) =
+            player_tuples.into_iter().unzip();
+        let coords = helpers::text_to_line_index(indexes, &text_lines).unwrap();
+
+        let mut player_coords = coords
+            .into_iter()
+            .map(Into::<TextCoord>::into)
+            .zip(inputs)
+            .collect::<HashMap<_, _>>();
+
+        // Making sure the main player cursor takes precedence over the others
+        let main_player = self.main_player().unwrap();
+        let main_coord = helpers::text_to_line_index(
+            vec![main_player.cursor()],
+            &text_lines,
+        )
+        .unwrap()[0];
+        player_coords.insert(main_coord.into(), main_player.last_input());
+
+        player_coords
     }
 }
 

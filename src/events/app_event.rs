@@ -5,4 +5,5 @@ pub enum AppEvent {
     Tick,
     Term(Result<crossterm::event::Event, std::io::Error>),
     Session(SessionEvent),
+    Ghost(char),
 }

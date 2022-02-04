@@ -30,14 +30,6 @@ impl TickerClient {
     }
 }
 
-// impl Deref for TickerClient {
-//     type Target = Sender<TickEvent>;
-
-//     fn deref(&self) -> &Self::Target {
-//         &self.tx
-//     }
-// }
-
 impl From<TickEvent> for AppEvent {
     fn from(_: TickEvent) -> Self {
         AppEvent::Tick

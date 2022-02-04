@@ -1,5 +1,6 @@
 pub mod app_event;
 pub mod event_aggregator;
+pub mod ghost;
 pub mod term_io;
 pub mod ticker;
 

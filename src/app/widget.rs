@@ -1,7 +1,5 @@
-use crate::highlighting::{Highlighter, NoOpHighlighter};
 use crate::utils::helpers;
 use crate::{
-    highlighting::SyntectHighlighter,
     text_coord::TextCoord,
     text_view::{Anchor, TextView},
 };
@@ -12,53 +10,29 @@ use crate::app::InputResult;
 
 use super::state::DacttyloGameState;
 
-pub struct DacttyloWidget<'txt, 'hl> {
+pub struct DacttyloWidget<'txt> {
     game_state: &'txt DacttyloGameState<'txt>,
-    highlighter: &'hl dyn Highlighter,
+    highlighted_content: Option<Vec<Vec<(&'txt str, tui::style::Style)>>>,
 }
 
-impl<'txt, 'hl> DacttyloWidget<'txt, 'hl> {
+impl<'txt> DacttyloWidget<'txt> {
     pub fn new(game_state: &'txt DacttyloGameState) -> Self {
         Self {
             game_state,
-            highlighter: &NoOpHighlighter,
+            highlighted_content: None,
         }
     }
 
-    pub fn highlighter(mut self, highlighter: &'hl dyn Highlighter) -> Self {
-        self.highlighter = highlighter;
+    pub fn highlighted_content(
+        mut self,
+        highlighted_content: Vec<Vec<(&'txt str, tui::style::Style)>>,
+    ) -> Self {
+        self.highlighted_content = Some(highlighted_content);
         self
     }
 
-    pub fn get_cursor_styles(
-        &self,
-        lines: &[&'txt str],
-    ) -> HashMap<TextCoord, tui::style::Style> {
-        let state = self.game_state;
-
-        let mut player_tuples = state
-            .players()
-            .iter()
-            .map(|(_, pstate)| (pstate.cursor(), pstate.last_input()))
-            .collect::<Vec<_>>();
-
-        player_tuples.sort_by(|(ca, _), (cb, _)| ca.cmp(cb));
-        let (indexes, inputs): (Vec<usize>, Vec<Option<InputResult>>) =
-            player_tuples.into_iter().unzip();
-        let coords = helpers::text_to_line_index(indexes, lines).unwrap();
-
-        let mut player_coords = coords
-            .into_iter()
-            .map(Into::<TextCoord>::into)
-            .zip(inputs)
-            .collect::<HashMap<_, _>>();
-
-        // Making sure the main player cursor takes precedence over the others
-        let main_player = state.main_player().unwrap();
-        let main_coord =
-            helpers::text_to_line_index(vec![main_player.cursor()], lines)
-                .unwrap()[0];
-        player_coords.insert(main_coord.into(), main_player.last_input());
+    pub fn get_cursor_styles(&self) -> HashMap<TextCoord, tui::style::Style> {
+        let player_coords = self.game_state.get_cursor_coords();
 
         let style = tui::style::Style::default();
         let neutral = style.bg(Color::White).fg(Color::Black);
@@ -77,12 +51,10 @@ impl<'txt, 'hl> DacttyloWidget<'txt, 'hl> {
     }
 }
 
-impl<'txt, 'hl> Widget for DacttyloWidget<'txt, 'hl> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+impl<'txt> Widget for DacttyloWidget<'txt> {
+    fn render(mut self, area: Rect, buf: &mut Buffer) {
         let text_lines: Vec<&str> =
             self.game_state.text().split_inclusive('\n').collect();
-
-        let styled_lines = self.highlighter.highlight(text_lines.as_ref());
 
         // let eggshell = Color::Rgb(255, 239, 214);
         // let darkblue = Color::Rgb(0, 27, 46);
@@ -94,10 +66,15 @@ impl<'txt, 'hl> Widget for DacttyloWidget<'txt, 'hl> {
         )
         .unwrap()[0];
 
-        let view = TextView::new()
-            .sparse_styling(self.get_cursor_styles(&text_lines))
-            .styled_content(styled_lines)
+        let mut view = TextView::new()
+            .sparse_styling(self.get_cursor_styles())
             .anchor(Anchor::Center(main_coord.0));
+
+        view = match self.highlighted_content.take() {
+            Some(hl_text_lines) => view.styled_content(hl_text_lines),
+            None => view.content(text_lines),
+        };
+
         view.render(area, buf);
     }
 }
