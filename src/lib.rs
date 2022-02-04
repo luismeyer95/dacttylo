@@ -2,8 +2,6 @@
 
 pub mod app;
 pub mod cli;
-pub mod editor_state;
-pub mod editor_view;
 pub mod events;
 pub mod highlighting;
 pub mod line_processor;

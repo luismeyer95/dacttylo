@@ -5,7 +5,7 @@ edition = "2021"
 default-run = "dacttylo"
 
 [profile.dev]
-opt-level = 0
+opt-level = 3
 
 [profile.release]
 opt-level = 3
