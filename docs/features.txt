@@ -16,21 +16,45 @@ Requirements:
     -> record correct inputs when the session starts
     -> every second, render a widget using the computed wpm
         * how to trigger a render? should the computation happen before each render?
-            - OPTION 1: use a client to trigger an AppEvent tick with a new WPMUpdate variant.
-            this is clunky, already have a bunch of event clients. maybe aggregate those into
-            a single client? T implements Into<T> for all T so it is possible to create an
-            AppEvent client/stream pair + aggregate it with other streams (termio, session) 
+            - create new app event variant WPM, create a task with a ticker that sends a WPM event every second
 
 Typing Session Report Feature Behaviour:
     -> at the end of a session, present the user with a session report
     -> includes
-        * average/top speed
+        * average/top wpm
         * number of mistakes
         * precision % (correct inputs / total inputs)
         * 5 worst characters
 
 Requirements:
-    -> 
+    -> record all session input results (correct and wrong), wrong inputs should come with metadata (got vs expected)
+    -> all the stats can be derived from the input result collection + session start timestamp
+        * average wpm:
+            session_duration_seconds = last_correct_input_timestamp - session_start_timestamp
+            characters_per_second = total_correct_inputs / session_duration_seconds
+            words_per_minute = (characters_per_second * 60) / 5
+        * top wpm:
+            - 'top' refers to a singular highest wpm value among other computed wpm values
+            - should determine at which frequency to perform the computation over time (every second)
+              + how each computation samples the input data (last 4 seconds)
+            - for every second in the total duration of the session, compute the wpm for the last 4 seconds
+            - could be helpful to get from iter({ timestamp, input_result }) to iter({ second, iter(input_result) })
+        * precision:
+            total_correct_inputs / total_inputs
+        * number of mistakes:
+            total_wrong_inputs
+        * 5 worst characters:
+            mistake_charlist = inputs.filter(wrong).map(expected_char)
+            mistake_charset = set_from(mistake_charlist)
+            charstats = mistake_charset.map(|char| {
+                (char_stat, rest) = mistake_charlist.partition(|c| c == char)
+                mistake_charlist = rest
+                return (char, char_stat.count())
+            })
+            5_worst = charstats.sort_by_descending_count().take(5)
+        
+
+
 
 Ghost Feature Behaviour:
     -> allow the user to race against his past self in a practice session
