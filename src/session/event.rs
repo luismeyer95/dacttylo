@@ -1,9 +1,4 @@
-use futures::Stream;
 use libp2p::{floodsub::Topic, PeerId};
-use std::{
-    pin::Pin,
-    task::{Context, Poll},
-};
 
 use crate::{events::AppEvent, network::NetEvent};
 

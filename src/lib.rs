@@ -3,6 +3,7 @@
 pub mod app;
 pub mod cli;
 pub mod events;
+pub mod ghost;
 pub mod highlighting;
 pub mod input;
 pub mod line_processor;

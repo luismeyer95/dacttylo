@@ -5,11 +5,8 @@ use dacttylo::{
     app::{
         state::DacttyloGameState, widget::DacttyloWidget, InputResult, Progress,
     },
-    events::{
-        ghost,
-        ticker::{self, TickerClient},
-        AppEvent, EventAggregator,
-    },
+    events::{app_event, AppEvent, EventAggregator},
+    ghost::Ghost,
     highlighting::{Highlighter, SyntectHighlighter},
     input::record::{InputRecorder, RecordManager},
     utils::{
@@ -22,18 +19,13 @@ use tokio_stream::StreamExt;
 use tui::{backend::CrosstermBackend, Terminal};
 
 pub async fn init_practice_session(practice_file: String) -> AsyncResult<()> {
-    // TODO: remove duplicate, this is for erroring out early (before tui mode)
-    // SyntectHighlighter::new()
-    //     .file(Some(&practice_file))?
-    //     .theme("base16-mocha.dark");
-
     let mut term = enter_tui_mode(std::io::stdout())?;
 
-    run_practice_session(&mut term, practice_file).await?;
+    let result = run_practice_session(&mut term, practice_file).await;
 
     leave_tui_mode(term)?;
 
-    Ok(())
+    result
 }
 
 async fn run_practice_session(
@@ -42,21 +34,17 @@ async fn run_practice_session(
 ) -> AsyncResult<()> {
     let text_contents = std::fs::read_to_string(&practice_file)?;
 
-    let manager = RecordManager::mount_dir("records")?;
-    let input_record = manager.load(&text_contents)?;
-
     // setup event stream
-    let (mut ghost_client, ghost_stream) = ghost::new(input_record);
-    let (ticker_client, ticker_stream) = ticker::new();
+    // let (mut ghost_client, ghost_stream) = ghost::new(input_record);
+    let (ticker_client, ticker_stream) = app_event::stream();
     let term_io_stream = crossterm::event::EventStream::new();
     let mut global_stream =
-        aggregate!([ticker_stream, term_io_stream, ghost_stream] as AppEvent);
+        aggregate!([ticker_stream, term_io_stream] as AppEvent);
 
     // initialize game state
-
     let mut game_state = DacttyloGameState::new("Luis", &text_contents)
         .with_players(&["Agathe"]);
-    ticker_client.tick().await?;
+    ticker_client.send(AppEvent::Tick).await?;
 
     // highlight syntax
     let text_lines: Vec<&str> =
@@ -68,7 +56,12 @@ async fn run_practice_session(
     let styled_lines = hl.highlight(text_lines.as_ref());
 
     let mut recorder = InputRecorder::new();
-    ghost_client.start().await?;
+
+    // load up ghost
+    let input_record = RecordManager::mount_dir("records")?
+        .load_from_contents(&text_contents)?;
+    let mut ghost = Ghost::new(input_record, ticker_client.clone());
+    ghost.start().await?;
 
     while let Some(event) = global_stream.next().await {
         match event {
@@ -80,7 +73,7 @@ async fn run_practice_session(
                     return Ok(());
                 }
             }
-            AppEvent::Ghost(c) => {
+            AppEvent::GhostInput(c) => {
                 let input_result =
                     game_state.process_input("Agathe", c).unwrap();
             }

@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationMilliSeconds};
 use std::io::{Read, Write};
-use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use std::{error::Error, time::Duration};
@@ -117,7 +116,7 @@ impl<'dir> RecordManager<'dir> {
         Ok(())
     }
 
-    pub fn load(
+    pub fn load_from_contents(
         &self,
         text: &str,
     ) -> Result<InputRecord, Box<dyn Error + Send + Sync>> {
@@ -144,7 +143,7 @@ mod tests {
             vec![(Duration::from_secs(0).into(), 'w')].into();
 
         manager.save("hello", &inputs).unwrap();
-        let loaded_inputs = manager.load("hello").unwrap();
+        let loaded_inputs = manager.load_from_contents("hello").unwrap();
 
         assert_eq!(loaded_inputs, inputs);
     }

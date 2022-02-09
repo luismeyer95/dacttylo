@@ -1,9 +1,22 @@
+use futures::Stream;
+use tokio::sync::mpsc::{self, Sender};
+use tokio_stream::wrappers::ReceiverStream;
+
 use crate::session::event::SessionEvent;
 
 #[derive(Debug)]
 pub enum AppEvent {
-    Tick,
+    // external triggers
     Term(Result<crossterm::event::Event, std::io::Error>),
     Session(SessionEvent),
-    Ghost(char),
+
+    // internal triggers
+    Tick,
+    WpmTick,
+    GhostInput(char),
+}
+
+pub fn stream() -> (Sender<AppEvent>, impl Stream<Item = AppEvent>) {
+    let (tx, rx) = mpsc::channel::<AppEvent>(256);
+    (tx, ReceiverStream::new(rx))
 }

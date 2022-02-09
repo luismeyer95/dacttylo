@@ -1,0 +1,38 @@
+WPM Feature Behaviour:
+    -> display the user's typing speed during a session in words-per-minute
+    -> updated in real-time every second
+    -> use color presets depending on the typing speed
+    -> maybe also use a graph and display speed over time
+
+Requirements:
+    -> how to compute the wpm speed?
+        * a "word" can be considered to be 5 characters on average, so we can work with CPM and convert to WPM (= CPM / 5)
+        * the inputs over which the speed is computed should be "correct" inputs relative to the session, only inputs that advanced the cursor are valid
+        * user speed at moment T could be derived from the average speed over the last 4 seconds
+        * count the correct inputs from the last 4 seconds, then either:
+            divide by 4 (CPS)
+            multiply by 15 (CPM)
+            multiply by 3 (WPM)
+    -> record correct inputs when the session starts
+    -> every second, render a widget using the computed wpm
+        * how to trigger a render? should the computation happen before each render?
+            - OPTION 1: use a client to trigger an AppEvent tick with a new WPMUpdate variant.
+            this is clunky, already have a bunch of event clients. maybe aggregate those into
+            a single client? T implements Into<T> for all T so it is possible to create an
+            AppEvent client/stream pair + aggregate it with other streams (termio, session) 
+
+Typing Session Report Feature Behaviour:
+    -> at the end of a session, present the user with a session report
+    -> includes
+        * average/top speed
+        * number of mistakes
+        * precision % (correct inputs / total inputs)
+        * 5 worst characters
+
+Requirements:
+    -> 
+
+Ghost Feature Behaviour:
+    -> allow the user to race against his past self in a practice session
+    -> opt-in with a CLI flag in practice mode
+
