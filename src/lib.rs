@@ -8,6 +8,7 @@ pub mod highlighting;
 pub mod input;
 pub mod line_processor;
 pub mod line_stylizer;
+pub mod modes;
 pub mod network;
 pub mod session;
 pub mod text_coord;

@@ -34,7 +34,7 @@ impl<'txt> PlayerState<'txt> {
     }
 
     pub fn get_progress(&self) -> Progress {
-        if self.pos == self.text.len() {
+        if self.pos == self.text.chars().count() {
             Progress::Finished
         } else {
             Progress::Ongoing
@@ -55,7 +55,7 @@ impl<'txt> PlayerState<'txt> {
     }
 
     pub fn set_cursor(&mut self, pos: usize) -> Result<(), &'static str> {
-        if pos > self.text.len() {
+        if pos > self.text.chars().count() {
             Err("cursor out of bounds")
         } else {
             self.pos = pos;
@@ -64,12 +64,7 @@ impl<'txt> PlayerState<'txt> {
     }
 
     pub fn advance_cursor(&mut self) -> Result<(), &'static str> {
-        if self.pos >= self.text.len() {
-            Err("cursor out of bounds")
-        } else {
-            self.pos += 1;
-            Ok(())
-        }
+        self.set_cursor(self.pos + 1)
     }
 
     pub fn cursor(&self) -> usize {
@@ -81,14 +76,14 @@ impl<'txt> PlayerState<'txt> {
     }
 }
 
-pub struct DacttyloGameState<'txt> {
+pub struct PlayerPool<'txt> {
     text: &'txt str,
 
     main_player: String,
     players: HashMap<String, PlayerState<'txt>>,
 }
 
-impl<'txt> DacttyloGameState<'txt> {
+impl<'txt> PlayerPool<'txt> {
     pub fn new(main_player: &str, text: &'txt str) -> Self {
         let mut players: HashMap<String, PlayerState<'txt>> =
             Default::default();
@@ -199,7 +194,7 @@ mod tests {
     #[test]
     fn solo() {
         let text = "Hi";
-        let mut game = DacttyloGameState::new("Luis", text);
+        let mut game = PlayerPool::new("Luis", text);
 
         assert_eq!(
             game.process_input("Luis", 'H').unwrap(),
@@ -220,8 +215,7 @@ mod tests {
     #[test]
     fn multi() {
         let text = "Hi";
-        let mut game =
-            DacttyloGameState::new("Luis", text).with_players(&["Agathe"]);
+        let mut game = PlayerPool::new("Luis", text).with_players(&["Agathe"]);
 
         assert_eq!(
             game.process_input("Luis", 'H').unwrap(),

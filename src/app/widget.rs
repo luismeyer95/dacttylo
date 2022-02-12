@@ -8,15 +8,15 @@ use tui::{buffer::Buffer, layout::Rect, style::Color, widgets::Widget};
 
 use crate::app::InputResult;
 
-use super::state::DacttyloGameState;
+use super::state::PlayerPool;
 
 pub struct DacttyloWidget<'txt> {
-    game_state: &'txt DacttyloGameState<'txt>,
+    game_state: &'txt PlayerPool<'txt>,
     highlighted_content: Option<Vec<Vec<(&'txt str, tui::style::Style)>>>,
 }
 
 impl<'txt> DacttyloWidget<'txt> {
-    pub fn new(game_state: &'txt DacttyloGameState) -> Self {
+    pub fn new(game_state: &'txt PlayerPool) -> Self {
         Self {
             game_state,
             highlighted_content: None,

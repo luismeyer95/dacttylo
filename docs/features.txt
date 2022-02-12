@@ -52,11 +52,11 @@ Requirements:
                 return (char, char_stat.count())
             })
             5_worst = charstats.sort_by_descending_count().take(5)
-        
-
-
+    
 
 Ghost Feature Behaviour:
     -> allow the user to race against his past self in a practice session
     -> opt-in with a CLI flag in practice mode
+    -> the ghost is represented by a grey cursor to minimize visual distraction
+
 

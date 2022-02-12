@@ -3,7 +3,6 @@ use crate::utils::types::AsyncResult;
 use super::highlighter::Highlighter;
 use once_cell::sync::OnceCell;
 use std::cell::RefCell;
-use std::error::Error;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
@@ -110,7 +109,7 @@ impl<'stx> SyntectHighlighterBuilder<'stx> {
         "InspiredGitHub",
     ];
 
-    pub fn file<T>(mut self, file: Option<T>) -> AsyncResult<Self>
+    pub fn from_file<T>(mut self, file: Option<T>) -> AsyncResult<Self>
     where
         T: AsRef<str>,
     {
@@ -121,6 +120,18 @@ impl<'stx> SyntectHighlighterBuilder<'stx> {
                 .map_err(|_| "error reading file")?
                 .ok_or("failed to load syntax for file")?;
         }
+
+        Ok(self)
+    }
+
+    pub fn from_text<'t, T>(mut self, text: &'t str) -> AsyncResult<Self>
+    where
+        T: AsRef<str>,
+    {
+        let (syntax_set, _) = load_defaults();
+        self.syntax = syntax_set
+            .find_syntax_by_first_line(text)
+            .ok_or("failed to load syntax for file")?;
 
         Ok(self)
     }

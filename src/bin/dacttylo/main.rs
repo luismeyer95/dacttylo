@@ -2,7 +2,7 @@
 
 use crossterm::event::{Event, KeyCode, KeyEvent};
 
-use dacttylo::app::state::DacttyloGameState;
+use dacttylo::app::state::PlayerPool;
 use dacttylo::app::widget::DacttyloWidget;
 use dacttylo::events::ticker;
 use dacttylo::events::ticker::TickerClient;
