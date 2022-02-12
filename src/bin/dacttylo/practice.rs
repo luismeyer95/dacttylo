@@ -2,7 +2,11 @@ use crate::AsyncResult;
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use dacttylo::{
     aggregate,
-    app::{state::PlayerPool, widget::DacttyloWidget, InputResult, Progress},
+    app::{
+        state::{PlayerPool, PlayerState},
+        widget::DacttyloWidget,
+        InputResult, Progress,
+    },
     events::{app_event, AppEvent, EventAggregator},
     ghost::Ghost,
     highlighting::{Highlighter, SyntectHighlighter},
@@ -37,12 +41,12 @@ pub async fn init_practice_session(practice_file: String) -> AsyncResult<()> {
 
 async fn run_practice_session(file: String) -> AsyncResult<()> {
     let text = std::fs::read_to_string(&file)?;
-    let mut game_state = initialize_player_state(&text);
+    let (main, opponents) = initialize_players(&text);
 
     let lines: Vec<&str> = text.split_inclusive('\n').collect();
     let styled_lines = apply_highlighting(&lines, &file)?;
 
-    let (client, mut events) = configure_event_stream();
+    let (client, events) = configure_event_stream();
     let mut ghost = initialize_ghost(&text, client.clone())?;
 
     client.send(AppEvent::Tick).await?;
@@ -50,16 +54,18 @@ async fn run_practice_session(file: String) -> AsyncResult<()> {
 
     let mut term = enter_tui_mode(std::io::stdout())?;
     let session_result =
-        handle_events(&mut term, client, events, game_state, styled_lines)
+        handle_events(&mut term, main, opponents, events, client, styled_lines)
             .await;
     leave_tui_mode(term)?;
 
-    /// display session results
+    // display session results
     Ok(())
 }
 
-pub fn initialize_player_state<'txt>(text: &'txt str) -> PlayerPool<'txt> {
-    PlayerPool::new("self", &text).with_players(&["ghost"])
+pub fn initialize_players(text: &'_ str) -> (PlayerState<'_>, PlayerPool<'_>) {
+    let main = PlayerState::new(text);
+    let opponents = PlayerPool::new(text).with_players(&["ghost"]);
+    (main, opponents)
 }
 
 pub fn configure_event_stream() -> (Sender<AppEvent>, EventAggregator<AppEvent>)
@@ -86,15 +92,16 @@ pub fn initialize_ghost(
     client: Sender<AppEvent>,
 ) -> AsyncResult<Ghost> {
     let input_record =
-        RecordManager::mount_dir("records")?.load_from_contents(&text)?;
-    Ok(Ghost::new(input_record, client.clone()))
+        RecordManager::mount_dir("records")?.load_from_contents(text)?;
+    Ok(Ghost::new(input_record, client))
 }
 
 async fn handle_events(
     term: &mut Terminal<CrosstermBackend<Stdout>>,
-    client: Sender<AppEvent>,
+    mut main: PlayerState<'_>,
+    mut opponents: PlayerPool<'_>,
     mut events: EventAggregator<AppEvent>,
-    mut game_state: PlayerPool<'_>,
+    client: Sender<AppEvent>,
     styled_lines: Vec<Vec<(&str, Style)>>,
 ) -> AsyncResult<SessionEnd> {
     let mut recorder = InputRecorder::new();
@@ -102,9 +109,9 @@ async fn handle_events(
     while let Some(event) = events.next().await {
         let session_state = match event {
             AppEvent::Term(e) => {
-                handle_term_event(e?, &mut game_state, &mut recorder).await
+                handle_term(e?, &mut main, &mut recorder).await
             }
-            AppEvent::GhostInput(c) => handle_ghost_input(c, &mut game_state),
+            AppEvent::GhostInput(c) => handle_ghost_input(c, &mut opponents),
             _ => SessionState::Ongoing,
         };
 
@@ -112,14 +119,14 @@ async fn handle_events(
             return Ok(end);
         }
 
-        render_text(term, &game_state, styled_lines.clone());
+        render_text(term, &main, &opponents, styled_lines.clone())?;
     }
 
     unreachable!();
 }
 
-fn handle_ghost_input(c: char, game_state: &mut PlayerPool) -> SessionState {
-    let input_result = game_state.process_input("ghost", c).unwrap();
+fn handle_ghost_input(c: char, opponents: &mut PlayerPool) -> SessionState {
+    let input_result = opponents.process_input("ghost", c).unwrap();
 
     if let InputResult::Correct(Progress::Finished) = input_result {
         SessionState::End(SessionEnd::Finished(SessionResult))
@@ -130,12 +137,14 @@ fn handle_ghost_input(c: char, game_state: &mut PlayerPool) -> SessionState {
 
 fn render_text(
     term: &mut Terminal<CrosstermBackend<Stdout>>,
-    game_state: &PlayerPool<'_>,
+    main: &PlayerState<'_>,
+    opponents: &PlayerPool<'_>,
     styled_lines: Vec<Vec<(&str, Style)>>,
 ) -> AsyncResult<()> {
     term.draw(|f| {
         f.render_widget(
-            DacttyloWidget::new(&game_state).highlighted_content(styled_lines),
+            DacttyloWidget::new(main, opponents)
+                .highlighted_content(styled_lines),
             f.size(),
         );
     })?;
@@ -143,9 +152,9 @@ fn render_text(
     Ok(())
 }
 
-async fn handle_term_event(
+async fn handle_term(
     term_event: crossterm::event::Event,
-    game_state: &mut PlayerPool<'_>,
+    main: &mut PlayerState<'_>,
     recorder: &mut InputRecorder,
 ) -> SessionState {
     if let Event::Key(event) = term_event {
@@ -160,12 +169,12 @@ async fn handle_term_event(
 
         if let Some(c) = c {
             recorder.push(c);
-            let input_result = game_state.process_input("self", c).unwrap();
+            let input_result = main.process_input(c).unwrap();
 
             if let InputResult::Correct(Progress::Finished) = input_result {
                 // let manager = RecordManager::mount_dir("records").unwrap();
                 // manager.save(game_state.text(), recorder.record()).unwrap();
-                return SessionState::End(SessionEnd::Quit);
+                return SessionState::End(SessionEnd::Finished(SessionResult));
             }
         }
     }

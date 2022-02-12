@@ -33,6 +33,13 @@ impl<'txt> PlayerState<'txt> {
         }
     }
 
+    pub fn get_cursor_coord(&self) -> TextCoord {
+        let text_lines = self.text.split_inclusive('\n').collect::<Vec<_>>();
+        let coords_lst =
+            helpers::text_to_line_index([self.pos], &text_lines).unwrap();
+        coords_lst[0].into()
+    }
+
     pub fn get_progress(&self) -> Progress {
         if self.pos == self.text.chars().count() {
             Progress::Finished
@@ -79,21 +86,15 @@ impl<'txt> PlayerState<'txt> {
 pub struct PlayerPool<'txt> {
     text: &'txt str,
 
-    main_player: String,
     players: HashMap<String, PlayerState<'txt>>,
 }
 
 impl<'txt> PlayerPool<'txt> {
-    pub fn new(main_player: &str, text: &'txt str) -> Self {
+    pub fn new(text: &'txt str) -> Self {
         let mut players: HashMap<String, PlayerState<'txt>> =
             Default::default();
-        players.insert(main_player.to_string(), PlayerState::new(text));
 
-        Self {
-            text,
-            main_player: main_player.to_string(),
-            players,
-        }
+        Self { text, players }
     }
 
     pub fn with_players(mut self, usernames: &[&str]) -> Self {
@@ -141,10 +142,6 @@ impl<'txt> PlayerPool<'txt> {
         self.players.get(username)
     }
 
-    pub fn main_player(&self) -> Option<&PlayerState> {
-        self.players.get(&self.main_player)
-    }
-
     pub fn players(&self) -> &HashMap<String, PlayerState<'txt>> {
         &self.players
     }
@@ -173,15 +170,6 @@ impl<'txt> PlayerPool<'txt> {
             .zip(inputs)
             .collect::<HashMap<_, _>>();
 
-        // Making sure the main player cursor takes precedence over the others
-        let main_player = self.main_player().unwrap();
-        let main_coord = helpers::text_to_line_index(
-            vec![main_player.cursor()],
-            &text_lines,
-        )
-        .unwrap()[0];
-        player_coords.insert(main_coord.into(), main_player.last_input());
-
         player_coords
     }
 }
@@ -194,7 +182,7 @@ mod tests {
     #[test]
     fn solo() {
         let text = "Hi";
-        let mut game = PlayerPool::new("Luis", text);
+        let mut game = PlayerPool::new(text);
 
         assert_eq!(
             game.process_input("Luis", 'H').unwrap(),
@@ -215,7 +203,7 @@ mod tests {
     #[test]
     fn multi() {
         let text = "Hi";
-        let mut game = PlayerPool::new("Luis", text).with_players(&["Agathe"]);
+        let mut game = PlayerPool::new(text).with_players(&["Agathe"]);
 
         assert_eq!(
             game.process_input("Luis", 'H').unwrap(),

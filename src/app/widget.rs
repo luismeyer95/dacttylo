@@ -4,21 +4,25 @@ use crate::{
     text_view::{Anchor, TextView},
 };
 use std::collections::HashMap;
+use std::iter;
 use tui::{buffer::Buffer, layout::Rect, style::Color, widgets::Widget};
 
 use crate::app::InputResult;
 
-use super::state::PlayerPool;
+use super::state::{PlayerPool, PlayerState};
 
 pub struct DacttyloWidget<'txt> {
-    game_state: &'txt PlayerPool<'txt>,
+    main: &'txt PlayerState<'txt>,
+    opponents: &'txt PlayerPool<'txt>,
+
     highlighted_content: Option<Vec<Vec<(&'txt str, tui::style::Style)>>>,
 }
 
 impl<'txt> DacttyloWidget<'txt> {
-    pub fn new(game_state: &'txt PlayerPool) -> Self {
+    pub fn new(main: &'txt PlayerState, opponents: &'txt PlayerPool) -> Self {
         Self {
-            game_state,
+            main,
+            opponents,
             highlighted_content: None,
         }
     }
@@ -31,22 +35,30 @@ impl<'txt> DacttyloWidget<'txt> {
         self
     }
 
-    pub fn get_cursor_styles(&self) -> HashMap<TextCoord, tui::style::Style> {
-        let player_coords = self.game_state.get_cursor_coords();
+    fn get_main_style(&self) -> (TextCoord, tui::style::Style) {
+        let player_coords = self.main.get_cursor_coord();
 
         let style = tui::style::Style::default();
         let neutral = style.bg(Color::White).fg(Color::Black);
         let wrong = style.bg(Color::Red).fg(Color::White);
 
-        player_coords
+        let style = match self.main.last_input() {
+            Some(InputResult::Wrong(_)) => wrong,
+            _ => neutral,
+        };
+
+        (player_coords, style)
+    }
+
+    fn get_opponent_styles(&self) -> HashMap<TextCoord, tui::style::Style> {
+        let opponent_coords = self.opponents.get_cursor_coords();
+
+        let style = tui::style::Style::default();
+        let grey = style.bg(Color::Rgb(20, 20, 20)).fg(Color::White);
+
+        opponent_coords
             .into_iter()
-            .map(|(coord, input)| {
-                let style = match input {
-                    Some(InputResult::Wrong(_)) => wrong,
-                    _ => neutral,
-                };
-                (coord, style)
-            })
+            .map(|(coord, _)| (coord, grey))
             .collect()
     }
 }
@@ -54,21 +66,20 @@ impl<'txt> DacttyloWidget<'txt> {
 impl<'txt> Widget for DacttyloWidget<'txt> {
     fn render(mut self, area: Rect, buf: &mut Buffer) {
         let text_lines: Vec<&str> =
-            self.game_state.text().split_inclusive('\n').collect();
+            self.opponents.text().split_inclusive('\n').collect();
+
+        let main_coord = self.main.get_cursor_coord();
+
+        let mut styles = self.get_opponent_styles();
+        let main_style = self.get_main_style();
+        styles.extend(HashMap::<_, _>::from_iter(iter::once(main_style)));
 
         // let eggshell = Color::Rgb(255, 239, 214);
         // let darkblue = Color::Rgb(0, 27, 46);
 
-        let main_player = self.game_state.main_player().unwrap();
-        let main_coord = helpers::text_to_line_index(
-            vec![main_player.cursor()],
-            &text_lines,
-        )
-        .unwrap()[0];
-
         let mut view = TextView::new()
-            .sparse_styling(self.get_cursor_styles())
-            .anchor(Anchor::Center(main_coord.0));
+            .sparse_styling(styles)
+            .anchor(Anchor::Center(main_coord.ln));
 
         view = match self.highlighted_content.take() {
             Some(hl_text_lines) => view.styled_content(hl_text_lines),
