@@ -1,6 +1,6 @@
 use super::input::InputResultRecord;
 use crate::app::InputResult;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub struct InputResultRecorder {
     start: Instant,
@@ -18,11 +18,15 @@ impl InputResultRecorder {
     }
 
     pub fn push(&mut self, input: InputResult) {
-        let elapsed = Instant::now().duration_since(self.start);
+        let elapsed = self.elapsed();
         self.record.inputs.push((elapsed.into(), input));
     }
 
     pub fn record(&self) -> &InputResultRecord {
         &self.record
+    }
+
+    pub fn elapsed(&self) -> Duration {
+        Instant::now().duration_since(self.start)
     }
 }

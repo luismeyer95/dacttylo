@@ -46,20 +46,12 @@ impl InputResultRecord {
             .count()
     }
 
-    pub fn average_wpm(&self) -> f64 {
-        let last_ipr = self.inputs.iter().rev().next();
+    pub fn average_wpm(&self, elapsed: Duration) -> f64 {
+        let elapsed_seconds = elapsed.as_secs_f64();
+        let total_correct = self.count_correct();
 
-        match last_ipr {
-            Some((elapsed, _)) => {
-                let elapsed_seconds =
-                    Into::<Duration>::into(elapsed.clone()).as_secs_f64();
-                let total_correct = self.count_correct();
-
-                let cps = total_correct as f64 / elapsed_seconds;
-                cps * 60.0 / 5.0
-            }
-            None => 0.0,
-        }
+        let cps = total_correct as f64 / elapsed_seconds;
+        cps * 60.0 / 5.0
     }
 
     pub fn top_wpm(&self, sampled_size: Duration, step: Duration) -> f64 {

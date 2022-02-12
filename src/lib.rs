@@ -11,6 +11,7 @@ pub mod modes;
 pub mod network;
 pub mod record;
 pub mod session;
+pub mod stats;
 pub mod text_coord;
 pub mod text_view;
 pub mod utils;

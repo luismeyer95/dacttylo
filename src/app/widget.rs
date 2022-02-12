@@ -5,6 +5,7 @@ use crate::{
 };
 use std::collections::HashMap;
 use std::iter;
+use tui::widgets::Block;
 use tui::{buffer::Buffer, layout::Rect, style::Color, widgets::Widget};
 
 use crate::app::InputResult;
@@ -15,6 +16,8 @@ pub struct DacttyloWidget<'txt> {
     main: &'txt PlayerState<'txt>,
     opponents: &'txt PlayerPool<'txt>,
 
+    block: Block<'txt>,
+
     highlighted_content: Option<Vec<Vec<(&'txt str, tui::style::Style)>>>,
 }
 
@@ -24,6 +27,7 @@ impl<'txt> DacttyloWidget<'txt> {
             main,
             opponents,
             highlighted_content: None,
+            block: Default::default(),
         }
     }
 
@@ -32,6 +36,11 @@ impl<'txt> DacttyloWidget<'txt> {
         highlighted_content: Vec<Vec<(&'txt str, tui::style::Style)>>,
     ) -> Self {
         self.highlighted_content = Some(highlighted_content);
+        self
+    }
+
+    pub fn block(mut self, block: Block<'txt>) -> Self {
+        self.block = block;
         self
     }
 
@@ -78,6 +87,7 @@ impl<'txt> Widget for DacttyloWidget<'txt> {
         // let darkblue = Color::Rgb(0, 27, 46);
 
         let mut view = TextView::new()
+            .block(self.block)
             .sparse_styling(styles)
             .anchor(Anchor::Center(main_coord.ln));
 

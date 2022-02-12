@@ -11,12 +11,20 @@ use dacttylo::{
     ghost::Ghost,
     highlighting::{Highlighter, SyntectHighlighter},
     record::{manager::RecordManager, recorder::InputResultRecorder},
+    stats::SessionStats,
     utils::tui::{enter_tui_mode, leave_tui_mode},
 };
-use std::io::Stdout;
+use std::{io::Stdout, time::Duration};
 use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
-use tui::{backend::CrosstermBackend, style::Style, Terminal};
+use tui::{
+    backend::CrosstermBackend,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Span, Text},
+    widgets::{Block, Borders, Paragraph},
+    Frame, Terminal,
+};
 
 pub struct SessionResult;
 
@@ -44,10 +52,10 @@ async fn run_practice_session(file: String) -> AsyncResult<()> {
     let styled_lines = apply_highlighting(&lines, &file)?;
 
     let (client, events) = configure_event_stream();
-    let mut ghost = initialize_ghost(&text, client.clone())?;
+    // let mut ghost = initialize_ghost(&text, client.clone())?;
 
     client.send(AppEvent::Tick).await?;
-    ghost.start().await?;
+    // ghost.start().await?;
 
     let mut term = enter_tui_mode(std::io::stdout())?;
     let session_result =
@@ -102,13 +110,21 @@ async fn handle_events(
     styled_lines: Vec<Vec<(&str, Style)>>,
 ) -> AsyncResult<SessionEnd> {
     let mut recorder = InputResultRecorder::new();
+    let mut stats = SessionStats::default();
+
+    let wpm_client = client.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            wpm_client.send(AppEvent::WpmTick).await.unwrap();
+        }
+    });
 
     while let Some(event) = events.next().await {
         let session_state = match event {
-            AppEvent::Term(e) => {
-                handle_term(e?, &mut main, &mut recorder).await
-            }
+            AppEvent::Term(e) => handle_term(e?, &mut main, &mut recorder),
             AppEvent::GhostInput(c) => handle_ghost_input(c, &mut opponents),
+            AppEvent::WpmTick => handle_wpm_tick(&mut stats, &recorder),
             _ => SessionState::Ongoing,
         };
 
@@ -116,10 +132,24 @@ async fn handle_events(
             return Ok(end);
         }
 
-        render_text(term, &main, &opponents, styled_lines.clone())?;
+        render(term, &main, &opponents, &stats, styled_lines.clone())?;
     }
 
     unreachable!();
+}
+
+fn handle_wpm_tick(
+    stats: &mut SessionStats,
+    recorder: &InputResultRecorder,
+) -> SessionState {
+    let record = recorder.record();
+    stats.wpm = record.wpm_at(Duration::from_secs(4), recorder.elapsed());
+    stats.average_wpm = record.average_wpm(recorder.elapsed());
+    stats.top_wpm = f64::max(stats.wpm, stats.top_wpm);
+    stats.mistake_count = record.count_wrong();
+    stats.precision = record.precision();
+
+    SessionState::Ongoing
 }
 
 fn handle_ghost_input(
@@ -138,24 +168,76 @@ fn handle_ghost_input(
     }
 }
 
-fn render_text(
+fn render(
     term: &mut Terminal<CrosstermBackend<Stdout>>,
     main: &PlayerState<'_>,
     opponents: &PlayerPool<'_>,
+    stats: &SessionStats,
     styled_lines: Vec<Vec<(&str, Style)>>,
 ) -> AsyncResult<()> {
     term.draw(|f| {
-        f.render_widget(
-            DacttyloWidget::new(main, opponents)
-                .highlighted_content(styled_lines),
-            f.size(),
-        );
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(2)
+            .constraints(
+                [Constraint::Length(7), Constraint::Percentage(80)].as_ref(),
+            )
+            .split(f.size());
+
+        render_stats(f, chunks[0], stats);
+        render_text(f, chunks[1], main, opponents, styled_lines);
     })?;
 
     Ok(())
 }
 
-async fn handle_term(
+fn render_stats(
+    f: &mut Frame<CrosstermBackend<Stdout>>,
+    area: Rect,
+    stats: &SessionStats,
+) {
+    let stats_fmt = format!("{}", stats);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default().bg(Color::Reset).fg(Color::White))
+        .title(Span::styled(
+            "Stats",
+            Style::default().add_modifier(Modifier::BOLD),
+        ));
+
+    let stats_widget = Paragraph::new(Text::from(stats_fmt))
+        .style(Style::default().bg(Color::Reset).fg(Color::White))
+        .block(block)
+        .alignment(Alignment::Left);
+
+    f.render_widget(stats_widget, area);
+}
+
+fn render_text(
+    f: &mut Frame<CrosstermBackend<Stdout>>,
+    area: Rect,
+    main: &PlayerState<'_>,
+    opponents: &PlayerPool<'_>,
+    styled_lines: Vec<Vec<(&str, Style)>>,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default().bg(Color::Reset).fg(Color::White))
+        .title(Span::styled(
+            "Text",
+            Style::default().add_modifier(Modifier::BOLD),
+        ));
+
+    f.render_widget(
+        DacttyloWidget::new(main, opponents)
+            .highlighted_content(styled_lines)
+            .block(block),
+        area,
+    );
+}
+
+fn handle_term(
     term_event: crossterm::event::Event,
     main: &mut PlayerState<'_>,
     recorder: &mut InputResultRecorder,
