@@ -21,8 +21,9 @@ use tui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    symbols,
     text::{Span, Text},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph},
     Frame, Terminal,
 };
 
@@ -143,9 +144,12 @@ fn handle_wpm_tick(
     recorder: &InputResultRecorder,
 ) -> SessionState {
     let record = recorder.record();
-    stats.wpm = record.wpm_at(Duration::from_secs(4), recorder.elapsed());
+    let elapsed = recorder.elapsed();
+    let wpm = record.wpm_at(Duration::from_secs(4), elapsed);
+
+    stats.wpm_series.push((elapsed.as_secs_f64(), wpm));
     stats.average_wpm = record.average_wpm(recorder.elapsed());
-    stats.top_wpm = f64::max(stats.wpm, stats.top_wpm);
+    stats.top_wpm = f64::max(wpm, stats.top_wpm);
     stats.mistake_count = record.count_wrong();
     stats.precision = record.precision();
 
@@ -180,12 +184,18 @@ fn render(
             .direction(Direction::Vertical)
             .margin(2)
             .constraints(
-                [Constraint::Length(7), Constraint::Percentage(80)].as_ref(),
+                [
+                    Constraint::Length(7),
+                    Constraint::Percentage(60),
+                    Constraint::Length(7),
+                ]
+                .as_ref(),
             )
             .split(f.size());
 
         render_stats(f, chunks[0], stats);
         render_text(f, chunks[1], main, opponents, styled_lines);
+        render_chart(f, chunks[2], stats);
     })?;
 
     Ok(())
@@ -235,6 +245,63 @@ fn render_text(
             .block(block),
         area,
     );
+}
+
+fn render_chart(
+    f: &mut Frame<CrosstermBackend<Stdout>>,
+    area: Rect,
+    stats: &SessionStats,
+) {
+    let data = stats
+        .wpm_series
+        .windows(30)
+        .last()
+        .map_or(stats.wpm_series.as_slice(), |data| data);
+
+    let last = data.last().map_or(0.0, |(secs, _)| *secs);
+    let x_bounds = [last - 30.0, last];
+
+    let datasets = vec![Dataset::default()
+        .name("WPM")
+        .marker(symbols::Marker::Braille)
+        .graph_type(GraphType::Line)
+        .style(Style::default().fg(Color::Yellow))
+        .data(data)];
+
+    let chart = Chart::new(datasets)
+        .block(
+            Block::default()
+                // .title(Span::styled(
+                //     "WPM",
+                //     Style::default()
+                //         .fg(Color::White)
+                //         .add_modifier(Modifier::BOLD),
+                // ))
+                .borders(Borders::ALL),
+        )
+        .x_axis(
+            Axis::default()
+                .title("Seconds")
+                .style(Style::default().fg(Color::Gray))
+                .bounds(x_bounds),
+        )
+        .y_axis(
+            Axis::default()
+                .title("WPM")
+                .style(Style::default().fg(Color::Gray))
+                .labels(vec![
+                    Span::styled(
+                        "0",
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "100",
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                ])
+                .bounds([0.0, 150.0]),
+        );
+    f.render_widget(chart, area);
 }
 
 fn handle_term(

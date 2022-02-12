@@ -2,7 +2,7 @@ use std::fmt;
 
 #[derive(Debug, Clone, Default)]
 pub struct SessionStats {
-    pub wpm: f64,
+    pub wpm_series: Vec<(f64, f64)>,
     pub average_wpm: f64,
     pub top_wpm: f64,
 
@@ -12,10 +12,12 @@ pub struct SessionStats {
 
 impl fmt::Display for SessionStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let wpm = self.wpm_series.last().map_or(0.0, |(_, wpm)| *wpm);
+
         write!(
             f,
-            "Current WPM: {}\nAverage WPM: {}\nTop WPM: {}\nPrecision: {}\nMistakes: {}\n",
-            self.wpm, self.average_wpm, self.top_wpm, self.precision, self.mistake_count
+            "Current WPM: {:.2}\nAverage WPM: {:.2}\nTop WPM: {:.2}\nPrecision: {:.2}\nMistakes: {}\n",
+            wpm, self.average_wpm, self.top_wpm, self.precision, self.mistake_count
         )
     }
 }
