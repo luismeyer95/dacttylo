@@ -2,7 +2,7 @@ use futures::Stream;
 use tokio::sync::mpsc::{self, Sender};
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::session::event::SessionEvent;
+use crate::{app::InputResult, session::event::SessionEvent};
 
 #[derive(Debug)]
 pub enum AppEvent {
@@ -13,7 +13,7 @@ pub enum AppEvent {
     // internal triggers
     Tick,
     WpmTick,
-    GhostInput(char),
+    GhostInput(InputResult),
 }
 
 pub fn stream() -> (Sender<AppEvent>, impl Stream<Item = AppEvent>) {

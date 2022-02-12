@@ -2,17 +2,18 @@
 
 use std::{collections::HashMap, error::Error};
 
+use serde::{Deserialize, Serialize};
 use InputResult::*;
 
 use crate::{text_coord::TextCoord, utils::helpers};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Progress {
     Ongoing,
     Finished,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InputResult {
     Correct(Progress),
     Wrong(char),
@@ -58,7 +59,7 @@ impl<'txt> PlayerState<'txt> {
             self.last_input = Some(Wrong(cursor_ch));
         }
 
-        self.last_input.clone()
+        self.last_input
     }
 
     pub fn set_cursor(&mut self, pos: usize) -> Result<(), &'static str> {
@@ -79,7 +80,11 @@ impl<'txt> PlayerState<'txt> {
     }
 
     pub fn last_input(&self) -> Option<InputResult> {
-        self.last_input.clone()
+        self.last_input
+    }
+
+    pub fn text(&self) -> &str {
+        self.text
     }
 }
 

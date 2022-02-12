@@ -1,18 +1,15 @@
-use crate::{
-    events::AppEvent,
-    input::record::{Elapsed, InputRecord},
-};
+use crate::{app::InputResult, events::AppEvent, record::{elapsed::Elapsed, input::InputResultRecord}};
 use std::error::Error;
 use tokio::sync::mpsc::Sender;
 
 #[derive(Debug, Clone)]
 pub struct Ghost {
-    inputs: Option<InputRecord>,
+    inputs: Option<InputResultRecord>,
     tx: Sender<AppEvent>,
 }
 
 impl Ghost {
-    pub fn new(inputs: InputRecord, tx: Sender<AppEvent>) -> Self {
+    pub fn new(inputs: InputResultRecord, tx: Sender<AppEvent>) -> Self {
         Self {
             inputs: Some(inputs),
             tx,
@@ -22,7 +19,7 @@ impl Ghost {
     pub async fn start(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         if let Some(record) = self.inputs.take() {
             let tx = self.tx.clone();
-            let inputs: Vec<(Elapsed, char)> = record.into();
+            let inputs: Vec<(Elapsed, InputResult)> = record.into();
 
             tokio::spawn(async move {
                 Self::replay_inputs(inputs, tx).await;
@@ -31,7 +28,10 @@ impl Ghost {
         Ok(())
     }
 
-    async fn replay_inputs(inputs: Vec<(Elapsed, char)>, tx: Sender<AppEvent>) {
+    async fn replay_inputs(
+        inputs: Vec<(Elapsed, InputResult)>,
+        tx: Sender<AppEvent>,
+    ) {
         let start = std::time::Instant::now();
 
         for (elapsed, char) in inputs {

@@ -1,77 +1,8 @@
-use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DurationMilliSeconds};
+use super::input::InputResultRecord;
+use std::error::Error;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::Instant;
-use std::{error::Error, time::Duration};
 use thiserror::Error;
-
-#[serde_as]
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct Elapsed {
-    #[serde_as(as = "DurationMilliSeconds<u64>")]
-    duration: Duration,
-}
-
-impl From<Duration> for Elapsed {
-    fn from(d: Duration) -> Self {
-        Elapsed { duration: d }
-    }
-}
-
-impl From<Elapsed> for Duration {
-    fn from(e: Elapsed) -> Self {
-        e.duration
-    }
-}
-
-//////////////////////////////
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct InputRecord {
-    pub inputs: Vec<(Elapsed, char)>,
-}
-
-impl From<Vec<(Elapsed, char)>> for InputRecord {
-    fn from(v: Vec<(Elapsed, char)>) -> Self {
-        InputRecord { inputs: v }
-    }
-}
-
-impl From<InputRecord> for Vec<(Elapsed, char)> {
-    fn from(val: InputRecord) -> Self {
-        val.inputs
-    }
-}
-
-////////////////////////////////
-
-pub struct InputRecorder {
-    start: Instant,
-    record: InputRecord,
-}
-
-impl InputRecorder {
-    pub fn new() -> Self {
-        Self {
-            start: Instant::now(),
-            record: InputRecord {
-                inputs: Default::default(),
-            },
-        }
-    }
-
-    pub fn push(&mut self, ch: char) {
-        let elapsed = Instant::now().duration_since(self.start);
-        self.record.inputs.push((elapsed.into(), ch));
-    }
-
-    pub fn record(&self) -> &InputRecord {
-        &self.record
-    }
-}
-
-////////////////////////////////
 
 #[derive(Error, Debug)]
 pub enum RecordManagerError {
@@ -101,7 +32,7 @@ impl<'dir> RecordManager<'dir> {
     pub fn save(
         &self,
         text: &str,
-        record: &InputRecord,
+        record: &InputResultRecord,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let filepath = self.derive_filepath(text);
 
@@ -119,14 +50,14 @@ impl<'dir> RecordManager<'dir> {
     pub fn load_from_contents(
         &self,
         text: &str,
-    ) -> Result<InputRecord, Box<dyn Error + Send + Sync>> {
+    ) -> Result<InputResultRecord, Box<dyn Error + Send + Sync>> {
         let filepath = self.derive_filepath(text);
 
         let mut file = std::fs::OpenOptions::new().read(true).open(filepath)?;
 
         let mut bytes = vec![];
         file.read_to_end(&mut bytes)?;
-        let inputs: InputRecord = bincode::deserialize(&bytes)?;
+        let inputs: InputResultRecord = bincode::deserialize(&bytes)?;
 
         Ok(inputs)
     }
@@ -135,12 +66,15 @@ impl<'dir> RecordManager<'dir> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::InputResult;
+    use std::time::Duration;
 
     #[test]
     fn save_and_reload() {
         let manager = RecordManager::mount_dir("records").unwrap();
-        let inputs: InputRecord =
-            vec![(Duration::from_secs(0).into(), 'w')].into();
+        let inputs: InputResultRecord =
+            vec![(Duration::from_secs(0).into(), InputResult::Wrong('w'))]
+                .into();
 
         manager.save("hello", &inputs).unwrap();
         let loaded_inputs = manager.load_from_contents("hello").unwrap();

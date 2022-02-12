@@ -10,11 +10,8 @@ use dacttylo::{
     events::{app_event, AppEvent, EventAggregator},
     ghost::Ghost,
     highlighting::{Highlighter, SyntectHighlighter},
-    input::record::{InputRecorder, RecordManager},
-    utils::{
-        tui::{enter_tui_mode, leave_tui_mode},
-        types::Action,
-    },
+    record::{manager::RecordManager, recorder::InputResultRecorder},
+    utils::tui::{enter_tui_mode, leave_tui_mode},
 };
 use std::io::Stdout;
 use tokio::sync::mpsc::Sender;
@@ -104,7 +101,7 @@ async fn handle_events(
     client: Sender<AppEvent>,
     styled_lines: Vec<Vec<(&str, Style)>>,
 ) -> AsyncResult<SessionEnd> {
-    let mut recorder = InputRecorder::new();
+    let mut recorder = InputResultRecorder::new();
 
     while let Some(event) = events.next().await {
         let session_state = match event {
@@ -125,13 +122,19 @@ async fn handle_events(
     unreachable!();
 }
 
-fn handle_ghost_input(c: char, opponents: &mut PlayerPool) -> SessionState {
-    let input_result = opponents.process_input("ghost", c).unwrap();
-
-    if let InputResult::Correct(Progress::Finished) = input_result {
-        SessionState::End(SessionEnd::Finished(SessionResult))
-    } else {
-        SessionState::Ongoing
+fn handle_ghost_input(
+    input: InputResult,
+    opponents: &mut PlayerPool,
+) -> SessionState {
+    match input {
+        InputResult::Correct(Progress::Finished) => {
+            SessionState::End(SessionEnd::Finished(SessionResult))
+        }
+        InputResult::Correct(Progress::Ongoing) => {
+            opponents.advance_player("ghost").unwrap();
+            SessionState::Ongoing
+        }
+        _ => SessionState::Ongoing,
     }
 }
 
@@ -155,7 +158,7 @@ fn render_text(
 async fn handle_term(
     term_event: crossterm::event::Event,
     main: &mut PlayerState<'_>,
-    recorder: &mut InputRecorder,
+    recorder: &mut InputResultRecorder,
 ) -> SessionState {
     if let Event::Key(event) = term_event {
         let KeyEvent { code, .. } = event;
@@ -168,12 +171,12 @@ async fn handle_term(
         };
 
         if let Some(c) = c {
-            recorder.push(c);
             let input_result = main.process_input(c).unwrap();
+            recorder.push(input_result);
 
             if let InputResult::Correct(Progress::Finished) = input_result {
                 // let manager = RecordManager::mount_dir("records").unwrap();
-                // manager.save(game_state.text(), recorder.record()).unwrap();
+                // manager.save(main.text(), recorder.record()).unwrap();
                 return SessionState::End(SessionEnd::Finished(SessionResult));
             }
         }
