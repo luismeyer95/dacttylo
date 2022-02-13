@@ -1,14 +1,14 @@
 use std::collections::HashMap;
-use tui::text::StyledGrapheme;
+use tui::{style::Color, text::StyledGrapheme};
+
+use syntect::highlighting::Theme;
 
 /// Convert text lines to styled rows given a buffer width
 pub trait LineProcessor {
     fn process_line<'txt>(
         &self,
-        line: &[(&'txt str, tui::style::Style)],
-        // Sparse styling applied after the syntax highlight pass,
-        // used for cursors and special application logic highlighting
-        sparse_styling: HashMap<usize, tui::style::Style>,
+        line: &mut dyn Iterator<Item = StyledGrapheme<'txt>>,
         width: u16,
+        default_bg: Color,
     ) -> Vec<Vec<StyledGrapheme<'txt>>>;
 }

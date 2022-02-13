@@ -12,9 +12,13 @@ use dacttylo::{
     highlighting::{Highlighter, SyntectHighlighter},
     record::{manager::RecordManager, recorder::InputResultRecorder},
     stats::SessionStats,
-    utils::tui::{enter_tui_mode, leave_tui_mode},
+    utils::{
+        syntect::syntect_load_defaults,
+        tui::{enter_tui_mode, leave_tui_mode},
+    },
 };
 use std::{io::Stdout, time::Duration};
+use syntect::highlighting::Theme;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
 use tui::{
@@ -22,10 +26,12 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols,
-    text::{Span, Text},
+    text::{Span, StyledGrapheme, Text},
     widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph},
     Frame, Terminal,
 };
+
+const THEME: &str = "Solarized (dark)";
 
 pub struct SessionResult;
 
@@ -45,6 +51,24 @@ pub async fn init_practice_session(practice_file: String) -> AsyncResult<()> {
     result
 }
 
+pub fn initialize_wpm_ticker(client: Sender<AppEvent>) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            client.send(AppEvent::WpmTick).await.unwrap();
+        }
+    });
+}
+
+pub fn initialize_ghost(
+    text: &str,
+    client: Sender<AppEvent>,
+) -> AsyncResult<Ghost> {
+    let input_record =
+        RecordManager::mount_dir("records")?.load_from_contents(text)?;
+    Ok(Ghost::new(input_record, client))
+}
+
 async fn run_practice_session(file: String) -> AsyncResult<()> {
     let text = std::fs::read_to_string(&file)?;
     let (main, opponents) = initialize_players(&text);
@@ -54,6 +78,7 @@ async fn run_practice_session(file: String) -> AsyncResult<()> {
 
     let (client, events) = configure_event_stream();
     // let mut ghost = initialize_ghost(&text, client.clone())?;
+    initialize_wpm_ticker(client.clone());
 
     client.send(AppEvent::Tick).await?;
     // ghost.start().await?;
@@ -81,25 +106,21 @@ pub fn configure_event_stream() -> (Sender<AppEvent>, EventAggregator<AppEvent>)
     (client, aggregate!([stream, term_io_stream] as AppEvent))
 }
 
+pub fn get_theme(theme: &str) -> &'static Theme {
+    let (_, ts) = syntect_load_defaults();
+    &ts.themes[theme]
+}
+
 pub fn apply_highlighting<'t>(
     lines: &[&'t str],
     file: &str,
-) -> AsyncResult<Vec<Vec<(&'t str, Style)>>> {
+) -> AsyncResult<Vec<Vec<StyledGrapheme<'t>>>> {
     let hl = SyntectHighlighter::new()
         .from_file(file.into())?
-        .theme("Solarized (dark)")
+        .theme(get_theme(THEME))
         .build()?;
 
-    Ok(hl.highlight(lines.as_ref()))
-}
-
-pub fn initialize_ghost(
-    text: &str,
-    client: Sender<AppEvent>,
-) -> AsyncResult<Ghost> {
-    let input_record =
-        RecordManager::mount_dir("records")?.load_from_contents(text)?;
-    Ok(Ghost::new(input_record, client))
+    Ok(hl.highlight(lines))
 }
 
 async fn handle_events(
@@ -108,18 +129,10 @@ async fn handle_events(
     mut opponents: PlayerPool<'_>,
     mut events: EventAggregator<AppEvent>,
     client: Sender<AppEvent>,
-    styled_lines: Vec<Vec<(&str, Style)>>,
+    styled_lines: Vec<Vec<StyledGrapheme<'_>>>,
 ) -> AsyncResult<SessionEnd> {
     let mut recorder = InputResultRecorder::new();
     let mut stats = SessionStats::default();
-
-    let wpm_client = client.clone();
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            wpm_client.send(AppEvent::WpmTick).await.unwrap();
-        }
-    });
 
     while let Some(event) = events.next().await {
         let session_state = match event {
@@ -177,7 +190,7 @@ fn render(
     main: &PlayerState<'_>,
     opponents: &PlayerPool<'_>,
     stats: &SessionStats,
-    styled_lines: Vec<Vec<(&str, Style)>>,
+    styled_lines: Vec<Vec<StyledGrapheme>>,
 ) -> AsyncResult<()> {
     term.draw(|f| {
         let chunks = Layout::default()
@@ -229,7 +242,7 @@ fn render_text(
     area: Rect,
     main: &PlayerState<'_>,
     opponents: &PlayerPool<'_>,
-    styled_lines: Vec<Vec<(&str, Style)>>,
+    styled_lines: Vec<Vec<StyledGrapheme>>,
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
@@ -239,10 +252,13 @@ fn render_text(
             Style::default().add_modifier(Modifier::BOLD),
         ));
 
+    let bg = get_theme(THEME).settings.background.unwrap();
+
     f.render_widget(
         DacttyloWidget::new(main, opponents)
             .highlighted_content(styled_lines)
-            .block(block),
+            .block(block)
+            .bg_color(Color::Rgb(bg.r, bg.g, bg.b)),
         area,
     );
 }
@@ -256,7 +272,7 @@ fn render_chart(
         .wpm_series
         .windows(30)
         .last()
-        .map_or(stats.wpm_series.as_slice(), |data| data);
+        .unwrap_or_else(|| stats.wpm_series.as_slice());
 
     let last = data.last().map_or(0.0, |(secs, _)| *secs);
     let x_bounds = [last - 30.0, last];

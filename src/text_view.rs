@@ -1,20 +1,21 @@
 use crate::{
-    line_processor::LineProcessor, line_stylizer::LineStylizer,
+    line_processor::LineProcessor, line_stylizer::BaseLineProcessor,
     text_coord::TextCoord,
 };
 use std::cmp::min;
 use std::ops::Range;
 use std::{cmp::Ordering, collections::HashMap};
-use tui::style::Color;
+use tui::style::{Color, Style};
 use tui::{
     buffer::Buffer,
     layout::Rect,
     text::StyledGrapheme,
     widgets::{Block, Widget},
 };
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-type StyledLine<'a> = Vec<(&'a str, tui::style::Style)>;
+type StyledLine<'a> = Vec<StyledGrapheme<'a>>;
 
 pub enum Anchor {
     Start(usize),
@@ -39,10 +40,6 @@ pub struct TextView<'a> {
     /// given a terminal width size
     line_processor: Box<dyn LineProcessor>,
 
-    /// Styling applied after the syntax highlight pass,
-    /// used for cursors and special application logic highlighting
-    sparse_styling: HashMap<TextCoord, tui::style::Style>,
-
     /// Enclosing block component
     block: Block<'a>,
 
@@ -59,9 +56,8 @@ impl<'a> TextView<'a> {
     pub fn new() -> Self {
         Self {
             text_lines: vec![],
-            line_processor: Box::new(LineStylizer),
+            line_processor: Box::new(BaseLineProcessor::default()),
             anchor: Anchor::Start(0),
-            sparse_styling: HashMap::new(),
             block: Default::default(),
             bg_color: None,
             metadata_handler: None,
@@ -71,18 +67,25 @@ impl<'a> TextView<'a> {
     pub fn content(mut self, lines: Vec<&'a str>) -> Self {
         self.text_lines = lines
             .into_iter()
-            .map(|s| vec![(s, tui::style::Style::default())])
+            .map(|ln| {
+                ln.graphemes(true)
+                    .map(|g| StyledGrapheme {
+                        symbol: g,
+                        style: Style::default(),
+                    })
+                    .collect()
+            })
             .collect();
         self
     }
 
     pub fn styled_content(mut self, lines: Vec<StyledLine<'a>>) -> Self {
-        if self.bg_color.is_none() {
-            self.bg_color = lines
-                .get(0)
-                .and_then(|ln| ln.get(0))
-                .and_then(|(_, style)| style.bg);
-        }
+        // if self.bg_color.is_none() {
+        //     self.bg_color = lines
+        //         .get(0)
+        //         .and_then(|ln| ln.get(0))
+        //         .and_then(|gphm| gphm.style.bg);
+        // }
         self.text_lines = lines;
         self
     }
@@ -110,14 +113,6 @@ impl<'a> TextView<'a> {
             }
             _ => anchor,
         };
-        self
-    }
-
-    pub fn sparse_styling(
-        mut self,
-        sparse_styling: HashMap<TextCoord, tui::style::Style>,
-    ) -> Self {
-        self.sparse_styling = sparse_styling;
         self
     }
 
@@ -286,12 +281,14 @@ impl<'a> TextView<'a> {
     fn line_to_rows(
         &self,
         line_nb: usize,
-        // line: &[(&'txt str, tui::style::Style)],
         width: u16,
     ) -> Vec<Vec<StyledGrapheme<'_>>> {
         let line = self.text_lines[line_nb].as_slice();
-        let styling = Self::extract_ln_styling(&self.sparse_styling, line_nb);
-        self.line_processor.process_line(line, styling, width)
+
+        let bg = self.bg_color.unwrap_or(Color::Reset);
+
+        let mut graphemes = line.to_owned().into_iter();
+        self.line_processor.process_line(&mut graphemes, width, bg)
     }
 }
 
@@ -309,7 +306,7 @@ impl<'a> Widget for TextView<'a> {
         }
 
         let bg_style = tui::style::Style::default()
-            .bg(self.bg_color.map_or(Color::Reset, |c| c));
+            .bg(self.bg_color.unwrap_or(Color::Reset));
         buf.set_style(area, bg_style);
 
         let lines = self.generate_view(area);

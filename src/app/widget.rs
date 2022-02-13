@@ -5,20 +5,24 @@ use crate::{
 };
 use std::collections::HashMap;
 use std::iter;
+use tui::style::Style;
+use tui::text::StyledGrapheme;
 use tui::widgets::Block;
 use tui::{buffer::Buffer, layout::Rect, style::Color, widgets::Widget};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::InputResult;
 
 use super::state::{PlayerPool, PlayerState};
 
 pub struct DacttyloWidget<'txt> {
+    block: Block<'txt>,
+
     main: &'txt PlayerState<'txt>,
     opponents: &'txt PlayerPool<'txt>,
 
-    block: Block<'txt>,
-
-    highlighted_content: Option<Vec<Vec<(&'txt str, tui::style::Style)>>>,
+    highlighted_content: Option<Vec<Vec<StyledGrapheme<'txt>>>>,
+    bg_color: Color,
 }
 
 impl<'txt> DacttyloWidget<'txt> {
@@ -28,12 +32,13 @@ impl<'txt> DacttyloWidget<'txt> {
             opponents,
             highlighted_content: None,
             block: Default::default(),
+            bg_color: Color::Reset,
         }
     }
 
     pub fn highlighted_content(
         mut self,
-        highlighted_content: Vec<Vec<(&'txt str, tui::style::Style)>>,
+        highlighted_content: Vec<Vec<StyledGrapheme<'txt>>>,
     ) -> Self {
         self.highlighted_content = Some(highlighted_content);
         self
@@ -41,6 +46,11 @@ impl<'txt> DacttyloWidget<'txt> {
 
     pub fn block(mut self, block: Block<'txt>) -> Self {
         self.block = block;
+        self
+    }
+
+    pub fn bg_color(mut self, color: Color) -> Self {
+        self.bg_color = color;
         self
     }
 
@@ -70,32 +80,35 @@ impl<'txt> DacttyloWidget<'txt> {
             .map(|(coord, _)| (coord, grey))
             .collect()
     }
+
+    fn apply_cursors(
+        styles: HashMap<TextCoord, Style>,
+        mut hl_lines: Vec<Vec<StyledGrapheme>>,
+    ) -> Vec<Vec<StyledGrapheme>> {
+        for (coord, style) in styles {
+            hl_lines[coord.ln][coord.x].style = style;
+        }
+
+        hl_lines
+    }
 }
 
 impl<'txt> Widget for DacttyloWidget<'txt> {
-    fn render(mut self, area: Rect, buf: &mut Buffer) {
-        let text_lines: Vec<&str> =
-            self.opponents.text().split_inclusive('\n').collect();
-
+    fn render(self, area: Rect, buf: &mut Buffer) {
         let main_coord = self.main.get_cursor_coord();
 
         let mut styles = self.get_opponent_styles();
         let main_style = self.get_main_style();
         styles.insert(main_style.0, main_style.1);
 
-        // let eggshell = Color::Rgb(255, 239, 214);
-        // let darkblue = Color::Rgb(0, 27, 46);
+        let hl_lines = self.highlighted_content.unwrap();
+        let styled_lines = Self::apply_cursors(styles, hl_lines);
 
-        let mut view = TextView::new()
+        TextView::new()
             .block(self.block)
-            .sparse_styling(styles)
-            .anchor(Anchor::Center(main_coord.ln));
-
-        view = match self.highlighted_content.take() {
-            Some(hl_text_lines) => view.styled_content(hl_text_lines),
-            None => view.content(text_lines),
-        };
-
-        view.render(area, buf);
+            .anchor(Anchor::Center(main_coord.ln))
+            .styled_content(styled_lines)
+            .bg_color(self.bg_color)
+            .render(area, buf);
     }
 }
