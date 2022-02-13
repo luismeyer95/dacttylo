@@ -60,3 +60,14 @@ Ghost Feature Behaviour:
     -> the ghost is represented by a grey cursor to minimize visual distraction
 
 
+Mistake Highlighting Feature:
+    -> color mistakes in yellow
+Requirements:
+    -> keep track of wrong input result positions/coords in the practice text
+    -> apply permanent yellow bg highlighting at these positions
+
+
+Wrapping Text Feature:
+    -> word wrapping
+Requirements:
+    -> change line processor to apply word wrapping

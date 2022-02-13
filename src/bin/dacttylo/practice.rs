@@ -87,7 +87,7 @@ pub fn apply_highlighting<'t>(
 ) -> AsyncResult<Vec<Vec<(&'t str, Style)>>> {
     let hl = SyntectHighlighter::new()
         .from_file(file.into())?
-        .theme("base16-mocha.dark")
+        .theme("Solarized (dark)")
         .build()?;
 
     Ok(hl.highlight(lines.as_ref()))
@@ -271,12 +271,12 @@ fn render_chart(
     let chart = Chart::new(datasets)
         .block(
             Block::default()
-                // .title(Span::styled(
-                //     "WPM",
-                //     Style::default()
-                //         .fg(Color::White)
-                //         .add_modifier(Modifier::BOLD),
-                // ))
+                .title(Span::styled(
+                    "WPM",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ))
                 .borders(Borders::ALL),
         )
         .x_axis(
@@ -287,7 +287,7 @@ fn render_chart(
         )
         .y_axis(
             Axis::default()
-                .title("WPM")
+                // .title("WPM")
                 .style(Style::default().fg(Color::Gray))
                 .labels(vec![
                     Span::styled(

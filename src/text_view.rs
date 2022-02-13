@@ -5,6 +5,7 @@ use crate::{
 use std::cmp::min;
 use std::ops::Range;
 use std::{cmp::Ordering, collections::HashMap};
+use tui::style::Color;
 use tui::{
     buffer::Buffer,
     layout::Rect,
@@ -46,7 +47,7 @@ pub struct TextView<'a> {
     block: Block<'a>,
 
     /// Option to override the background color after all styles are applied
-    bg_color: tui::style::Color,
+    bg_color: Option<Color>,
 
     /// Optional closure to set external UI state from the list of displayed lines
     metadata_handler: Option<Box<dyn FnMut(RenderMetadata) + 'a>>,
@@ -62,7 +63,7 @@ impl<'a> TextView<'a> {
             anchor: Anchor::Start(0),
             sparse_styling: HashMap::new(),
             block: Default::default(),
-            bg_color: tui::style::Color::Reset,
+            bg_color: None,
             metadata_handler: None,
         }
     }
@@ -76,11 +77,12 @@ impl<'a> TextView<'a> {
     }
 
     pub fn styled_content(mut self, lines: Vec<StyledLine<'a>>) -> Self {
-        self.bg_color = lines
-            .get(0)
-            .and_then(|ln| ln.get(0))
-            .and_then(|(_, style)| style.bg)
-            .map_or_else(|| tui::style::Color::Reset, |style| style);
+        if self.bg_color.is_none() {
+            self.bg_color = lines
+                .get(0)
+                .and_then(|ln| ln.get(0))
+                .and_then(|(_, style)| style.bg);
+        }
         self.text_lines = lines;
         self
     }
@@ -119,8 +121,8 @@ impl<'a> TextView<'a> {
         self
     }
 
-    pub fn bg_color(mut self, color: tui::style::Color) -> Self {
-        self.bg_color = color;
+    pub fn bg_color(mut self, color: Color) -> Self {
+        self.bg_color = Some(color);
         self
     }
 
@@ -306,7 +308,8 @@ impl<'a> Widget for TextView<'a> {
             return;
         }
 
-        let bg_style = tui::style::Style::default().bg(self.bg_color);
+        let bg_style = tui::style::Style::default()
+            .bg(self.bg_color.map_or(Color::Reset, |c| c));
         buf.set_style(area, bg_style);
 
         let lines = self.generate_view(area);

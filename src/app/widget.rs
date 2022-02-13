@@ -81,7 +81,7 @@ impl<'txt> Widget for DacttyloWidget<'txt> {
 
         let mut styles = self.get_opponent_styles();
         let main_style = self.get_main_style();
-        styles.extend(HashMap::<_, _>::from_iter(iter::once(main_style)));
+        styles.insert(main_style.0, main_style.1);
 
         // let eggshell = Color::Rgb(255, 239, 214);
         // let darkblue = Color::Rgb(0, 27, 46);
