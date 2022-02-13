@@ -67,13 +67,7 @@ impl Widget for WpmWidget {
             ..area.top() + offset_y + fig_height)
             .enumerate()
         {
-            buf.set_stringn(
-                area.left() + offset_x,
-                y,
-                &rows[i],
-                area.right() as usize,
-                style,
-            );
+            buf.set_string(area.left() + offset_x, y, &rows[i], style);
         }
     }
 }
