@@ -1,15 +1,12 @@
-use crate::utils::helpers;
 use crate::{
     text_coord::TextCoord,
     text_view::{Anchor, TextView},
 };
 use std::collections::HashMap;
-use std::iter;
 use tui::style::Style;
 use tui::text::StyledGrapheme;
 use tui::widgets::Block;
 use tui::{buffer::Buffer, layout::Rect, style::Color, widgets::Widget};
-use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::InputResult;
 

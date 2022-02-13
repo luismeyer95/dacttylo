@@ -1,5 +1,3 @@
-use crate::line_processor::LineProcessor;
-use std::collections::HashMap;
 use tui::{
     style::{Color, Style},
     text::StyledGrapheme,
@@ -7,8 +5,16 @@ use tui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-const TAB_SYMBOL: &str = "\u{21e5}";
-const NL_SYMBOL: &str = "\u{23ce}";
+/// Convert text lines to styled rows given a buffer width
+pub trait LineProcessor {
+    fn process_line<'txt>(
+        &self,
+        line: &mut dyn Iterator<Item = StyledGrapheme<'txt>>,
+        width: u16,
+        default_bg: Color,
+    ) -> Vec<Vec<StyledGrapheme<'txt>>>;
+}
+
 const SPACE: &str = " ";
 
 pub struct SymbolMap {
@@ -17,7 +23,7 @@ pub struct SymbolMap {
 }
 
 pub struct BaseLineProcessor {
-    symbols: SymbolMap,
+    pub symbols: SymbolMap,
 }
 
 impl Default for BaseLineProcessor {
@@ -141,12 +147,4 @@ impl BaseLineProcessor {
 
         rows
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn wrapping() {}
 }

@@ -1,7 +1,6 @@
-use crate::{
-    line_processor::LineProcessor, line_stylizer::BaseLineProcessor,
-    text_coord::TextCoord,
-};
+use crate::line::processor::LineProcessor;
+use crate::line::stylizer::LineStylizer;
+use crate::text_coord::TextCoord;
 use std::cmp::min;
 use std::ops::Range;
 use std::{cmp::Ordering, collections::HashMap};
@@ -56,7 +55,7 @@ impl<'a> TextView<'a> {
     pub fn new() -> Self {
         Self {
             text_lines: vec![],
-            line_processor: Box::new(BaseLineProcessor::default()),
+            line_processor: Box::new(LineStylizer),
             anchor: Anchor::Start(0),
             block: Default::default(),
             bg_color: None,
