@@ -14,3 +14,4 @@ pub mod stats;
 pub mod text_coord;
 pub mod text_view;
 pub mod utils;
+pub mod widgets;

@@ -16,6 +16,7 @@ use dacttylo::{
         syntect::syntect_load_defaults,
         tui::{enter_tui_mode, leave_tui_mode},
     },
+    widgets::wpm::WpmWidget,
 };
 use std::{io::Stdout, time::Duration};
 use syntect::highlighting::Theme;
@@ -27,7 +28,9 @@ use tui::{
     style::{Color, Modifier, Style},
     symbols,
     text::{Span, StyledGrapheme, Text},
-    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph},
+    widgets::{
+        Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph, Widget,
+    },
     Frame, Terminal,
 };
 
@@ -208,10 +211,29 @@ fn render(
 
         render_stats(f, chunks[0], stats);
         render_text(f, chunks[1], main, opponents, styled_lines);
-        render_chart(f, chunks[2], stats);
+
+        let wpm_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(
+                [Constraint::Percentage(80), Constraint::Percentage(20)]
+                    .as_ref(),
+            )
+            .split(chunks[2]);
+
+        render_chart(f, wpm_chunks[0], stats);
+        render_wpm(f, wpm_chunks[1], stats);
     })?;
 
     Ok(())
+}
+
+fn render_wpm(
+    f: &mut Frame<CrosstermBackend<Stdout>>,
+    area: Rect,
+    stats: &SessionStats,
+) {
+    let wpm = stats.wpm_series.last().map_or(0.0, |(_, wpm)| *wpm);
+    f.render_widget(WpmWidget(wpm as u32), area);
 }
 
 fn render_stats(
