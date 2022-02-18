@@ -9,10 +9,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use InputResult::*;
 
-use crate::{
-    text_coord::TextCoord,
-    utils::helpers::{self, text_to_line_index},
-};
+use crate::{text_coord::TextCoord, utils::helpers::text_to_line_index};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Progress {
@@ -43,6 +40,33 @@ impl<'txt> PlayerState<'txt> {
         }
     }
 
+    pub fn process_input(&mut self, input_ch: char) -> Option<InputResult> {
+        let cursor_ch = self.text.chars().nth(self.pos)?;
+
+        if input_ch == cursor_ch {
+            self.pos += 1;
+            if cursor_ch == '\n' {
+                self.skip_trailing_wp();
+            }
+            self.last_input = Some(Correct(self.get_progress()));
+        } else {
+            self.errors.insert(self.pos);
+            self.last_input = Some(Wrong(cursor_ch));
+        }
+
+        self.last_input
+    }
+
+    fn skip_trailing_wp(&mut self) {
+        let it = self.text.chars().skip(self.pos);
+        for ch in it {
+            if !ch.is_whitespace() || ch == '\n' {
+                break;
+            }
+            self.pos += 1;
+        }
+    }
+
     pub fn get_error_coords(&self) -> Vec<TextCoord> {
         let text_lines = self.text.split_inclusive('\n').collect::<Vec<_>>();
         let errors: Vec<usize> = Vec::from_iter(self.errors.clone());
@@ -64,20 +88,6 @@ impl<'txt> PlayerState<'txt> {
         } else {
             Progress::Ongoing
         }
-    }
-
-    pub fn process_input(&mut self, input_ch: char) -> Option<InputResult> {
-        let cursor_ch = self.text.chars().nth(self.pos)?;
-
-        if input_ch == cursor_ch {
-            self.pos += 1;
-            self.last_input = Some(Correct(self.get_progress()));
-        } else {
-            self.errors.insert(self.pos);
-            self.last_input = Some(Wrong(cursor_ch));
-        }
-
-        self.last_input
     }
 
     pub fn set_cursor(&mut self, pos: usize) -> Result<(), &'static str> {
