@@ -18,6 +18,8 @@ use dacttylo::{
     },
     widgets::wpm::WpmWidget,
 };
+use figlet_rs::FIGfont;
+use once_cell::sync::OnceCell;
 use std::{io::Stdout, time::Duration};
 use syntect::highlighting::Theme;
 use tokio::sync::mpsc::Sender;
@@ -203,13 +205,13 @@ fn render(
                 [
                     Constraint::Length(7),
                     Constraint::Percentage(60),
-                    Constraint::Length(7),
+                    // Constraint::Length(7),
                 ]
                 .as_ref(),
             )
             .split(f.size());
 
-        render_stats(f, chunks[0], stats);
+        // render_stats(f, chunks[0], stats);
         render_text(f, chunks[1], main, opponents, styled_lines);
 
         let wpm_chunks = Layout::default()
@@ -218,7 +220,7 @@ fn render(
                 [Constraint::Percentage(80), Constraint::Percentage(20)]
                     .as_ref(),
             )
-            .split(chunks[2]);
+            .split(chunks[0]);
 
         render_chart(f, wpm_chunks[0], stats);
         render_wpm(f, wpm_chunks[1], stats);
@@ -233,7 +235,8 @@ fn render_wpm(
     stats: &SessionStats,
 ) {
     let wpm = stats.wpm_series.last().map_or(0.0, |(_, wpm)| *wpm);
-    f.render_widget(WpmWidget(wpm as u32), area);
+    let widget = WpmWidget::new(wpm as u32, load_font());
+    f.render_widget(widget, area);
 }
 
 fn render_stats(
@@ -370,4 +373,9 @@ fn handle_term(
     }
 
     SessionState::Ongoing
+}
+
+pub fn load_font() -> &'static FIGfont {
+    static FONT: OnceCell<FIGfont> = OnceCell::new();
+    FONT.get_or_init(|| FIGfont::from_file("figfonts/lcd.flf").unwrap())
 }

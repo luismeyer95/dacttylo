@@ -1,4 +1,6 @@
-use figlet_rs::FIGfont;
+use std::cmp::min;
+
+use figlet_rs::{FIGfont, FIGure};
 use tui::{
     buffer::Buffer,
     layout::Rect,
@@ -7,69 +9,91 @@ use tui::{
     widgets::{Block, Borders, Widget},
 };
 
-pub struct WpmWidget(pub u32);
+pub struct WpmWidget<'f> {
+    wpm: u32,
+    font: &'f FIGfont,
+}
 
-impl WpmWidget {
-    fn render_block(block: Block, area: &mut Rect, buf: &mut Buffer) {
-        // save the inner_area because render consumes the block
-        let inner_area = block.inner(*area);
-        block.render(*area, buf);
-
-        *area = inner_area;
-    }
-
-    fn speed_color(wpm: u32) -> Color {
-        match wpm {
-            0..=49 => Color::LightGreen,
-            50..=69 => Color::LightYellow,
-            70..=89 => Color::LightRed,
-            90..=109 => Color::LightMagenta,
-            _ => Color::LightCyan,
-        }
+impl<'f> WpmWidget<'f> {
+    pub fn new(wpm: u32, font: &'f FIGfont) -> Self {
+        Self { wpm, font }
     }
 }
 
-impl Widget for WpmWidget {
+impl<'f> Widget for WpmWidget<'f> {
     fn render(self, mut area: Rect, buf: &mut Buffer) {
-        let block = Block::default()
-            .title(Span::styled(
-                "WPM",
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            ))
-            .borders(Borders::ALL);
+        render_block(&mut area, buf);
 
-        Self::render_block(block, &mut area, buf);
+        let figure = self.font.convert(&self.wpm.to_string()).unwrap();
+        let rows = figure_to_rows(figure);
 
-        let font = FIGfont::from_file("figfonts/lcd.flf").unwrap();
-        let figure = font.convert(&format!("{}", self.0)).unwrap();
+        let (offset_x, offset_y) = (
+            compute_offset_x(area.width, &rows),
+            compute_offset_y(area.height, &rows),
+        );
 
-        let mut rows: Vec<String> = vec![];
-
-        for y in 0..figure.height {
-            let mut row = String::new();
-            for ch in &figure.characters {
-                row.push_str(&ch.characters[y as usize]);
-            }
-            rows.push(row);
-        }
-
-        let fig_width = rows[0].chars().count() as u16;
-        let fig_height = figure.height as u16;
-
-        let offset_x = (area.width.saturating_sub(fig_width)) / 2;
-        let offset_y = (area.height.saturating_sub(fig_height)) / 2;
-
-        let style = Style::default().fg(Self::speed_color(self.0));
+        let style = Style::default().fg(speed_color(self.wpm));
+        let max_height = min(rows.len() as u16, area.height);
 
         for (i, y) in (area.top() + offset_y
-            ..area.top() + offset_y + fig_height)
+            ..area.top() + offset_y + max_height)
             .enumerate()
         {
             buf.set_string(area.left() + offset_x, y, &rows[i], style);
         }
     }
+}
+
+fn speed_color(wpm: u32) -> Color {
+    match wpm {
+        0..=49 => Color::LightGreen,
+        50..=69 => Color::LightYellow,
+        70..=89 => Color::LightRed,
+        90..=109 => Color::LightMagenta,
+        _ => Color::LightCyan,
+    }
+}
+
+fn render_block(area: &mut Rect, buf: &mut Buffer) {
+    let block = Block::default()
+        .title(Span::styled(
+            "WPM",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL);
+    // save the inner_area because render consumes the block
+    let inner_area = block.inner(*area);
+    block.render(*area, buf);
+
+    *area = inner_area;
+}
+
+fn figure_to_rows(figure: FIGure) -> Vec<String> {
+    let mut rows: Vec<String> = vec![];
+
+    for y in 0..figure.height {
+        let mut row = String::new();
+        for ch in &figure.characters {
+            row.push_str(&ch.characters[y as usize]);
+        }
+        rows.push(row);
+    }
+
+    rows
+}
+
+fn compute_offset_x(total_width: u16, rows: &[String]) -> u16 {
+    let fig_width = rows[0].chars().count() as u16;
+
+    (total_width.saturating_sub(fig_width)) / 2
+}
+
+fn compute_offset_y(total_height: u16, rows: &[String]) -> u16 {
+    let fig_height = rows.len() as u16;
+
+    (total_height.saturating_sub(fig_height)) / 2
 }
 
 #[cfg(test)]
