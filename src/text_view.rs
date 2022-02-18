@@ -1,9 +1,8 @@
 use crate::line::processor::LineProcessor;
 use crate::line::stylizer::LineStylizer;
-use crate::text_coord::TextCoord;
+use crate::utils::types::StyledLine;
 use std::cmp::min;
-use std::ops::Range;
-use std::{cmp::Ordering, collections::HashMap};
+use std::cmp::Ordering;
 use tui::style::{Color, Style};
 use tui::{
     buffer::Buffer,
@@ -11,10 +10,7 @@ use tui::{
     text::StyledGrapheme,
     widgets::{Block, Widget},
 };
-use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
-
-type StyledLine<'a> = Vec<StyledGrapheme<'a>>;
 
 pub enum Anchor {
     Start(usize),
@@ -22,15 +18,10 @@ pub enum Anchor {
     End(usize),
 }
 
-pub struct RenderMetadata {
-    pub lines_rendered: Range<usize>,
-    pub anchor: Anchor,
-}
-
 /// Lower level, stateless text displaying engine.
-pub struct TextView<'a> {
+pub struct TextView<'a, 'ln> {
     /// The full text buffer
-    text_lines: Vec<StyledLine<'a>>,
+    text_lines: &'ln [StyledLine<'a>],
 
     /// Controls the line offset behaviour for the final display
     anchor: Anchor,
@@ -44,49 +35,20 @@ pub struct TextView<'a> {
 
     /// Option to override the background color after all styles are applied
     bg_color: Option<Color>,
-
-    /// Optional closure to set external UI state from the list of displayed lines
-    metadata_handler: Option<Box<dyn FnMut(RenderMetadata) + 'a>>,
 }
 
-impl<'a> TextView<'a> {
+impl<'a, 'ln> TextView<'a, 'ln> {
     /// Instantiate a TextView widget from a line buffer and use the builder
     /// pattern to set custom rendering options
-    pub fn new() -> Self {
+
+    pub fn from_styled_content(lines: &'ln [StyledLine<'a>]) -> Self {
         Self {
-            text_lines: vec![],
+            text_lines: lines,
             line_processor: Box::new(LineStylizer),
             anchor: Anchor::Start(0),
             block: Default::default(),
             bg_color: None,
-            metadata_handler: None,
         }
-    }
-
-    pub fn content(mut self, lines: Vec<&'a str>) -> Self {
-        self.text_lines = lines
-            .into_iter()
-            .map(|ln| {
-                ln.graphemes(true)
-                    .map(|g| StyledGrapheme {
-                        symbol: g,
-                        style: Style::default(),
-                    })
-                    .collect()
-            })
-            .collect();
-        self
-    }
-
-    pub fn styled_content(mut self, lines: Vec<StyledLine<'a>>) -> Self {
-        // if self.bg_color.is_none() {
-        //     self.bg_color = lines
-        //         .get(0)
-        //         .and_then(|ln| ln.get(0))
-        //         .and_then(|gphm| gphm.style.bg);
-        // }
-        self.text_lines = lines;
-        self
     }
 
     pub fn block(mut self, block: Block<'a>) -> Self {
@@ -120,14 +82,6 @@ impl<'a> TextView<'a> {
         self
     }
 
-    pub fn on_render(
-        mut self,
-        callback: impl FnMut(RenderMetadata) + 'a,
-    ) -> Self {
-        self.metadata_handler = Some(Box::new(callback));
-        self
-    }
-
     fn render_block(&mut self, area: &mut Rect, buf: &mut Buffer) {
         let block = std::mem::take(&mut self.block);
 
@@ -140,53 +94,9 @@ impl<'a> TextView<'a> {
 
     fn generate_view(&mut self, area: Rect) -> Vec<Vec<StyledGrapheme<'_>>> {
         match self.anchor {
-            Anchor::Start(anchor) => self.generate_start_anchor(anchor, area),
-            Anchor::End(anchor) => self.generate_end_anchor(anchor, area),
             Anchor::Center(anchor) => self.generate_center_anchor(anchor, area),
             _ => panic!("Disabled anchors"),
         }
-    }
-
-    fn generate_start_anchor(
-        &mut self,
-        anchor: usize,
-        area: Rect,
-    ) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let handler = self.metadata_handler.take();
-
-        let (end_ln, rows) = self.expand_rows_down(anchor, area);
-
-        if let Some(mut handler) = handler {
-            handler(RenderMetadata {
-                lines_rendered: anchor..end_ln,
-                anchor: Anchor::Start(anchor),
-            });
-        }
-
-        rows
-    }
-
-    fn generate_end_anchor(
-        &mut self,
-        anchor: usize,
-        area: Rect,
-    ) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let handler = self.metadata_handler.take();
-
-        let (start_ln, mut rows) = self.expand_rows_up(anchor - 1, area);
-        let area = Rect::new(0, 0, area.width, area.height - rows.len() as u16); // cast should be safe
-        let (end_ln, bottom_rows) = self.expand_rows_down(anchor, area);
-        rows.extend(bottom_rows);
-
-        // passing the actually displayed line range
-        if let Some(mut handler) = handler {
-            handler(RenderMetadata {
-                lines_rendered: start_ln..end_ln,
-                anchor: Anchor::End(anchor),
-            });
-        }
-
-        rows
     }
 
     fn generate_center_anchor(
@@ -194,24 +104,13 @@ impl<'a> TextView<'a> {
         anchor: usize,
         area: Rect,
     ) -> Vec<Vec<StyledGrapheme<'_>>> {
-        let handler = self.metadata_handler.take();
-
         let half_height_area = Rect::new(0, 0, area.width, area.height / 2);
 
-        let (start_ln, mut rows) =
-            self.expand_rows_up(anchor, half_height_area);
+        let (_, mut rows) = self.expand_rows_up(anchor, half_height_area);
 
         let area = Rect::new(0, 0, area.width, area.height - rows.len() as u16); // cast should be safe
-        let (end_ln, bottom_rows) = self.expand_rows_down(anchor + 1, area);
+        let (_, bottom_rows) = self.expand_rows_down(anchor + 1, area);
         rows.extend(bottom_rows);
-
-        // passing the fully displayed line range
-        if let Some(mut handler) = handler {
-            handler(RenderMetadata {
-                lines_rendered: start_ln..end_ln,
-                anchor: Anchor::Center(anchor),
-            });
-        }
 
         rows
     }
@@ -266,46 +165,28 @@ impl<'a> TextView<'a> {
         (0, rows)
     }
 
-    fn extract_ln_styling(
-        map: &HashMap<TextCoord, tui::style::Style>,
-        ln_offset: usize,
-    ) -> HashMap<usize, tui::style::Style> {
-        map.iter()
-            .filter_map(|(coord, &style)| {
-                (coord.ln == ln_offset).then(|| (coord.x, style))
-            })
-            .collect()
-    }
-
     fn line_to_rows(
         &self,
         line_nb: usize,
         width: u16,
     ) -> Vec<Vec<StyledGrapheme<'_>>> {
         let line = self.text_lines[line_nb].as_slice();
-
+        let mut graphemes = line.to_owned().into_iter();
         let bg = self.bg_color.unwrap_or(Color::Reset);
 
-        let mut graphemes = line.to_owned().into_iter();
         self.line_processor.process_line(&mut graphemes, width, bg)
     }
 }
 
-impl<'a> Default for TextView<'a> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<'a> Widget for TextView<'a> {
+impl<'a, 'ln> Widget for TextView<'a, 'ln> {
     fn render(mut self, mut area: Rect, buf: &mut Buffer) {
         self.render_block(&mut area, buf);
         if area.height < 1 || area.width < 1 {
             return;
         }
 
-        let bg_style = tui::style::Style::default()
-            .bg(self.bg_color.unwrap_or(Color::Reset));
+        let bg_style =
+            Style::default().bg(self.bg_color.unwrap_or(Color::Reset));
         buf.set_style(area, bg_style);
 
         let lines = self.generate_view(area);

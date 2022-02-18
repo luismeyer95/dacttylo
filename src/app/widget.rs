@@ -1,6 +1,7 @@
 use crate::{
     text_coord::TextCoord,
     text_view::{Anchor, TextView},
+    utils::types::StyledLine,
 };
 use std::collections::HashMap;
 use tui::style::Style;
@@ -12,33 +13,29 @@ use crate::app::InputResult;
 
 use super::state::{PlayerPool, PlayerState};
 
-pub struct DacttyloWidget<'txt> {
+pub struct DacttyloWidget<'txt, 'ln> {
     block: Block<'txt>,
 
     main: &'txt PlayerState<'txt>,
     opponents: &'txt PlayerPool<'txt>,
 
-    highlighted_content: Option<Vec<Vec<StyledGrapheme<'txt>>>>,
+    highlighted_content: &'ln [StyledLine<'txt>],
     bg_color: Color,
 }
 
-impl<'txt> DacttyloWidget<'txt> {
-    pub fn new(main: &'txt PlayerState, opponents: &'txt PlayerPool) -> Self {
+impl<'txt, 'ln> DacttyloWidget<'txt, 'ln> {
+    pub fn new(
+        main: &'txt PlayerState,
+        opponents: &'txt PlayerPool,
+        lines: &'ln [StyledLine<'txt>],
+    ) -> Self {
         Self {
             main,
             opponents,
-            highlighted_content: None,
+            highlighted_content: lines,
             block: Default::default(),
             bg_color: Color::Reset,
         }
-    }
-
-    pub fn highlighted_content(
-        mut self,
-        highlighted_content: Vec<Vec<StyledGrapheme<'txt>>>,
-    ) -> Self {
-        self.highlighted_content = Some(highlighted_content);
-        self
     }
 
     pub fn block(mut self, block: Block<'txt>) -> Self {
@@ -51,10 +48,10 @@ impl<'txt> DacttyloWidget<'txt> {
         self
     }
 
-    fn get_main_style(&self) -> (TextCoord, tui::style::Style) {
+    fn get_main_style(&self) -> (TextCoord, Style) {
         let player_coords = self.main.get_cursor_coord();
 
-        let style = tui::style::Style::default();
+        let style = Style::default();
         let neutral = style.bg(Color::White).fg(Color::Black);
         let wrong = style.bg(Color::Red).fg(Color::White);
 
@@ -66,10 +63,19 @@ impl<'txt> DacttyloWidget<'txt> {
         (player_coords, style)
     }
 
-    fn get_opponent_styles(&self) -> HashMap<TextCoord, tui::style::Style> {
+    fn get_main_error_styles(&self) -> HashMap<TextCoord, Style> {
+        let coords = self.main.get_error_coords();
+
+        let style = Style::default();
+        let yellow = style.bg(Color::Yellow).fg(Color::Black);
+
+        coords.into_iter().map(|coord| (coord, yellow)).collect()
+    }
+
+    fn get_opponent_styles(&self) -> HashMap<TextCoord, Style> {
         let opponent_coords = self.opponents.get_cursor_coords();
 
-        let style = tui::style::Style::default();
+        let style = Style::default();
         let grey = style.bg(Color::Rgb(20, 20, 20)).fg(Color::White);
 
         opponent_coords
@@ -90,21 +96,23 @@ impl<'txt> DacttyloWidget<'txt> {
     }
 }
 
-impl<'txt> Widget for DacttyloWidget<'txt> {
+impl<'txt, 'ln> Widget for DacttyloWidget<'txt, 'ln> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let main_coord = self.main.get_cursor_coord();
 
         let mut styles = self.get_opponent_styles();
+        let error_styles = self.get_main_error_styles();
         let main_style = self.get_main_style();
+
+        styles.extend(error_styles);
         styles.insert(main_style.0, main_style.1);
 
-        let hl_lines = self.highlighted_content.unwrap();
-        let styled_lines = Self::apply_cursors(styles, hl_lines);
+        let styled_lines =
+            Self::apply_cursors(styles, self.highlighted_content.to_owned());
 
-        TextView::new()
+        TextView::from_styled_content(&styled_lines)
             .block(self.block)
             .anchor(Anchor::Center(main_coord.ln))
-            .styled_content(styled_lines)
             .bg_color(self.bg_color)
             .render(area, buf);
     }

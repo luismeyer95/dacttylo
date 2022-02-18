@@ -15,6 +15,7 @@ use dacttylo::{
     utils::{
         syntect::syntect_load_defaults,
         tui::{enter_tui_mode, leave_tui_mode},
+        types::StyledLine,
     },
     widgets::wpm::WpmWidget,
 };
@@ -26,18 +27,15 @@ use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
 use tui::{
     backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols,
-    text::{Span, StyledGrapheme, Text},
-    widgets::{
-        Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph, Widget,
-    },
+    text::{Span, StyledGrapheme},
+    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType},
     Frame, Terminal,
 };
 
 const THEME: &str = "Solarized (dark)";
-
 pub struct SessionResult;
 
 enum SessionState {
@@ -151,10 +149,40 @@ async fn handle_events(
             return Ok(end);
         }
 
-        render(term, &main, &opponents, &stats, styled_lines.clone())?;
+        render(term, &main, &opponents, &stats, &styled_lines)?;
     }
 
     unreachable!();
+}
+
+fn handle_term(
+    term_event: crossterm::event::Event,
+    main: &mut PlayerState<'_>,
+    recorder: &mut InputResultRecorder,
+) -> SessionState {
+    if let Event::Key(event) = term_event {
+        let KeyEvent { code, .. } = event;
+        let c = match code {
+            KeyCode::Esc => return SessionState::End(SessionEnd::Quit),
+            KeyCode::Char(c) => Some(c),
+            KeyCode::Enter => Some('\n'),
+            KeyCode::Tab => Some('\t'),
+            _ => None,
+        };
+
+        if let Some(c) = c {
+            let input_result = main.process_input(c).unwrap();
+            recorder.push(input_result);
+
+            if let InputResult::Correct(Progress::Finished) = input_result {
+                // let manager = RecordManager::mount_dir("records").unwrap();
+                // manager.save(main.text(), recorder.record()).unwrap();
+                return SessionState::End(SessionEnd::Finished(SessionResult));
+            }
+        }
+    }
+
+    SessionState::Ongoing
 }
 
 fn handle_wpm_tick(
@@ -195,24 +223,16 @@ fn render(
     main: &PlayerState<'_>,
     opponents: &PlayerPool<'_>,
     stats: &SessionStats,
-    styled_lines: Vec<Vec<StyledGrapheme>>,
+    styled_lines: &[StyledLine],
 ) -> AsyncResult<()> {
     term.draw(|f| {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(2)
             .constraints(
-                [
-                    Constraint::Length(7),
-                    Constraint::Percentage(60),
-                    // Constraint::Length(7),
-                ]
-                .as_ref(),
+                [Constraint::Length(7), Constraint::Percentage(60)].as_ref(),
             )
             .split(f.size());
-
-        // render_stats(f, chunks[0], stats);
-        render_text(f, chunks[1], main, opponents, styled_lines);
 
         let wpm_chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -221,12 +241,18 @@ fn render(
                     .as_ref(),
             )
             .split(chunks[0]);
-
         render_chart(f, wpm_chunks[0], stats);
         render_wpm(f, wpm_chunks[1], stats);
+
+        render_text(f, chunks[1], main, opponents, styled_lines);
     })?;
 
     Ok(())
+}
+
+pub fn load_font() -> &'static FIGfont {
+    static FONT: OnceCell<FIGfont> = OnceCell::new();
+    FONT.get_or_init(|| FIGfont::from_file("figfonts/lcd.flf").unwrap())
 }
 
 fn render_wpm(
@@ -239,35 +265,12 @@ fn render_wpm(
     f.render_widget(widget, area);
 }
 
-fn render_stats(
-    f: &mut Frame<CrosstermBackend<Stdout>>,
-    area: Rect,
-    stats: &SessionStats,
-) {
-    let stats_fmt = format!("{}", stats);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .style(Style::default().bg(Color::Reset).fg(Color::White))
-        .title(Span::styled(
-            "Stats",
-            Style::default().add_modifier(Modifier::BOLD),
-        ));
-
-    let stats_widget = Paragraph::new(Text::from(stats_fmt))
-        .style(Style::default().bg(Color::Reset).fg(Color::White))
-        .block(block)
-        .alignment(Alignment::Left);
-
-    f.render_widget(stats_widget, area);
-}
-
 fn render_text(
     f: &mut Frame<CrosstermBackend<Stdout>>,
     area: Rect,
     main: &PlayerState<'_>,
     opponents: &PlayerPool<'_>,
-    styled_lines: Vec<Vec<StyledGrapheme>>,
+    styled_lines: &[StyledLine],
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
@@ -280,8 +283,7 @@ fn render_text(
     let bg = get_theme(THEME).settings.background.unwrap();
 
     f.render_widget(
-        DacttyloWidget::new(main, opponents)
-            .highlighted_content(styled_lines)
+        DacttyloWidget::new(main, opponents, styled_lines)
             .block(block)
             .bg_color(Color::Rgb(bg.r, bg.g, bg.b)),
         area,
@@ -345,37 +347,25 @@ fn render_chart(
     f.render_widget(chart, area);
 }
 
-fn handle_term(
-    term_event: crossterm::event::Event,
-    main: &mut PlayerState<'_>,
-    recorder: &mut InputResultRecorder,
-) -> SessionState {
-    if let Event::Key(event) = term_event {
-        let KeyEvent { code, .. } = event;
-        let c = match code {
-            KeyCode::Esc => return SessionState::End(SessionEnd::Quit),
-            KeyCode::Char(c) => Some(c),
-            KeyCode::Enter => Some('\n'),
-            KeyCode::Tab => Some('\t'),
-            _ => None,
-        };
+// fn render_stats(
+//     f: &mut Frame<CrosstermBackend<Stdout>>,
+//     area: Rect,
+//     stats: &SessionStats,
+// ) {
+//     let stats_fmt = format!("{}", stats);
 
-        if let Some(c) = c {
-            let input_result = main.process_input(c).unwrap();
-            recorder.push(input_result);
+//     let block = Block::default()
+//         .borders(Borders::ALL)
+//         .style(Style::default().bg(Color::Reset).fg(Color::White))
+//         .title(Span::styled(
+//             "Stats",
+//             Style::default().add_modifier(Modifier::BOLD),
+//         ));
 
-            if let InputResult::Correct(Progress::Finished) = input_result {
-                // let manager = RecordManager::mount_dir("records").unwrap();
-                // manager.save(main.text(), recorder.record()).unwrap();
-                return SessionState::End(SessionEnd::Finished(SessionResult));
-            }
-        }
-    }
+//     let stats_widget = Paragraph::new(Text::from(stats_fmt))
+//         .style(Style::default().bg(Color::Reset).fg(Color::White))
+//         .block(block)
+//         .alignment(Alignment::Left);
 
-    SessionState::Ongoing
-}
-
-pub fn load_font() -> &'static FIGfont {
-    static FONT: OnceCell<FIGfont> = OnceCell::new();
-    FONT.get_or_init(|| FIGfont::from_file("figfonts/lcd.flf").unwrap())
-}
+//     f.render_widget(stats_widget, area);
+// }

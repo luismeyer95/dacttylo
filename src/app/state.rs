@@ -1,11 +1,18 @@
 #![allow(dead_code)]
 
-use std::{collections::HashMap, error::Error};
+use std::{
+    collections::{BTreeSet, HashMap},
+    error::Error,
+};
 
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use InputResult::*;
 
-use crate::{text_coord::TextCoord, utils::helpers};
+use crate::{
+    text_coord::TextCoord,
+    utils::helpers::{self, text_to_line_index},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Progress {
@@ -23,6 +30,7 @@ pub struct PlayerState<'txt> {
     text: &'txt str,
     pos: usize,
     last_input: Option<InputResult>,
+    errors: BTreeSet<usize>,
 }
 
 impl<'txt> PlayerState<'txt> {
@@ -31,13 +39,22 @@ impl<'txt> PlayerState<'txt> {
             pos: 0,
             text,
             last_input: None,
+            errors: BTreeSet::new(),
         }
+    }
+
+    pub fn get_error_coords(&self) -> Vec<TextCoord> {
+        let text_lines = self.text.split_inclusive('\n').collect::<Vec<_>>();
+        let errors: Vec<usize> = Vec::from_iter(self.errors.clone());
+        let coords = text_to_line_index(errors, &text_lines).unwrap();
+
+        coords.into_iter().map_into::<TextCoord>().collect()
     }
 
     pub fn get_cursor_coord(&self) -> TextCoord {
         let text_lines = self.text.split_inclusive('\n').collect::<Vec<_>>();
-        let coords_lst =
-            helpers::text_to_line_index([self.pos], &text_lines).unwrap();
+        let coords_lst = text_to_line_index([self.pos], &text_lines).unwrap();
+
         coords_lst[0].into()
     }
 
@@ -56,6 +73,7 @@ impl<'txt> PlayerState<'txt> {
             self.pos += 1;
             self.last_input = Some(Correct(self.get_progress()));
         } else {
+            self.errors.insert(self.pos);
             self.last_input = Some(Wrong(cursor_ch));
         }
 
@@ -96,8 +114,7 @@ pub struct PlayerPool<'txt> {
 
 impl<'txt> PlayerPool<'txt> {
     pub fn new(text: &'txt str) -> Self {
-        let mut players: HashMap<String, PlayerState<'txt>> =
-            Default::default();
+        let players: HashMap<String, PlayerState<'txt>> = Default::default();
 
         Self { text, players }
     }
@@ -167,15 +184,13 @@ impl<'txt> PlayerPool<'txt> {
         player_tuples.sort_by(|(ca, _), (cb, _)| ca.cmp(cb));
         let (indexes, inputs): (Vec<usize>, Vec<Option<InputResult>>) =
             player_tuples.into_iter().unzip();
-        let coords = helpers::text_to_line_index(indexes, &text_lines).unwrap();
+        let coords = text_to_line_index(indexes, &text_lines).unwrap();
 
-        let mut player_coords = coords
+        coords
             .into_iter()
             .map(Into::<TextCoord>::into)
             .zip(inputs)
-            .collect::<HashMap<_, _>>();
-
-        player_coords
+            .collect::<HashMap<_, _>>()
     }
 }
 
