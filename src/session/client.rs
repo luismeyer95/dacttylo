@@ -1,9 +1,10 @@
-use std::error::Error;
+use std::{error::Error, time::Duration};
 
 use libp2p::{
     floodsub::Topic,
     kad::{record::Key, PeerRecord, Record},
 };
+use rand::{distributions::Alphanumeric, Rng};
 
 use crate::network::P2PClient;
 use crate::session::{SessionCommand, SessionData};
@@ -30,7 +31,10 @@ impl SessionClient {
             .ok_or("Session not found")
     }
 
-    pub async fn get_hosted_sessions(&mut self, host: &str) -> AsyncResult<Vec<SessionData>> {
+    pub async fn get_hosted_sessions(
+        &mut self,
+        host: &str,
+    ) -> AsyncResult<Vec<SessionData>> {
         let key = Key::new(&host);
         let err_str = format!("Could not find record `{:?}`", key);
 
@@ -44,17 +48,48 @@ impl SessionClient {
         let session_list: Vec<SessionData> = result
             .records
             .iter()
-            .filter_map(|peer_record| bincode::deserialize(&peer_record.record.value).ok())
+            .filter_map(|peer_record| {
+                bincode::deserialize(&peer_record.record.value).ok()
+            })
             .collect();
 
         Ok(session_list)
     }
 
-    pub async fn host_session(&mut self, host: &str, session_data: SessionData) -> AsyncResult<()> {
-        self.join_session(session_data.session_id.clone()).await?;
+    pub async fn await_session_for_host(
+        &mut self,
+        host: impl AsRef<str>,
+    ) -> SessionData {
+        loop {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            if let Ok(session_list) =
+                self.get_hosted_sessions(host.as_ref()).await
+            {
+                if let Some(session) = session_list.first() {
+                    return session.clone();
+                }
+            }
+        }
+    }
+
+    pub async fn host_session(
+        &mut self,
+        host: &str,
+        metadata: Vec<u8>,
+    ) -> AsyncResult<()> {
+        let session_id: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(8)
+            .map(char::from)
+            .collect();
+
+        self.join_session(session_id.clone()).await?;
 
         let key = Key::new(&host);
-        let value = bincode::serialize(&session_data)?;
+        let value = bincode::serialize(&SessionData {
+            session_id,
+            metadata,
+        })?;
 
         let result = self
             .p2p_client
@@ -62,13 +97,17 @@ impl SessionClient {
             .await
             .expect("P2P client channel failure");
 
-        match result {
-            Ok(_) => Ok(()),
-            Err(_) => Err(format!("Could not put record `{:?}`", key).into()),
-        }
+        // match result {
+        //     Ok(_) => Ok(()),
+        //     Err(_) => Err(format!("Could not put record `{:?}`", key).into()),
+        // }
+        Ok(())
     }
 
-    pub async fn stop_hosting_session(&mut self, host: &str) -> AsyncResult<()> {
+    pub async fn stop_hosting_session(
+        &mut self,
+        host: &str,
+    ) -> AsyncResult<()> {
         self.leave_session().await?;
 
         // This will only remove the record previously set by the local peer if any
@@ -82,7 +121,10 @@ impl SessionClient {
         Ok(())
     }
 
-    pub async fn join_session(&mut self, session_id: String) -> AsyncResult<bool> {
+    pub async fn join_session(
+        &mut self,
+        session_id: String,
+    ) -> AsyncResult<bool> {
         let result = self
             .p2p_client
             .subscribe(Topic::new(session_id.clone()))
@@ -108,7 +150,10 @@ impl SessionClient {
         Ok(result)
     }
 
-    pub async fn publish(&mut self, session_cmd: SessionCommand) -> AsyncResult<()> {
+    pub async fn publish(
+        &mut self,
+        session_cmd: SessionCommand,
+    ) -> AsyncResult<()> {
         let current_session_id = self.get_session()?;
         let payload = bincode::serialize(&session_cmd)?;
 

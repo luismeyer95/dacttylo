@@ -66,8 +66,8 @@ Requirements:
     -> keep track of wrong input result positions/coords in the practice text
     -> apply permanent yellow bg highlighting at these positions
 
-
-Wrapping Text Feature:
+QOL Features:
     -> word wrapping
+    -> skip trailing wp
 Requirements:
     -> change line processor to apply word wrapping

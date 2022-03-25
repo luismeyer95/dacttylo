@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use libp2p::{identity, PeerId};
-use std::{collections::HashMap, error::Error, time::Duration};
+use std::{collections::HashMap, error::Error};
 
 use dacttylo::{
     self,
@@ -39,24 +39,16 @@ async fn handle_host(user: String, file: String) -> AsyncResult<()> {
 
     println!("Local peer id: {:?}", peer_id);
 
-    let (p2p_client, mut event_stream, task) = network::new(id_keys.clone()).await?;
+    let (p2p_client, mut event_stream, task) =
+        network::new(id_keys.clone()).await?;
     let mut client = SessionClient::new(p2p_client);
 
     tokio::spawn(task.run());
     let mut stdin = io::BufReader::new(io::stdin()).lines();
 
-    let session_id = "abcd";
     let text = std::fs::read_to_string(&file)?;
 
-    client
-        .host_session(
-            &user,
-            SessionData {
-                session_id: session_id.into(),
-                metadata: text.as_str().into(),
-            },
-        )
-        .await;
+    client.host_session(&user, text.as_str().into()).await?;
 
     enum State {
         TakingRegistrations,
@@ -131,7 +123,7 @@ async fn handle_host(user: String, file: String) -> AsyncResult<()> {
                                     println!("Registering user `{}`", user);
                                     registered_users.insert(peer_id.to_base58(), user);
                                 };
-                            },
+                            }
 
                             // awaiting session start, do not process anything
                             State::AwaitingSessionStart => {}
@@ -157,18 +149,6 @@ async fn handle_host(user: String, file: String) -> AsyncResult<()> {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-async fn search_session(client: &mut SessionClient, host: String) -> SessionData {
-    loop {
-        println!("Searching session...");
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        if let Ok(mut session_list) = client.get_hosted_sessions(&host).await {
-            if let Some(session) = session_list.pop() {
-                return session;
-            }
-        }
-    }
-}
-
 async fn handle_join(user: String, host: String) -> AsyncResult<()> {
     println!(
         "'Join' was used, name is: {:?}, joining host {:?}",
@@ -189,7 +169,7 @@ async fn handle_join(user: String, host: String) -> AsyncResult<()> {
     let SessionData {
         session_id,
         metadata,
-    } = search_session(&mut client, host).await;
+    } = client.await_session_for_host(&host).await;
 
     println!("Session found!");
     let text = String::from_utf8(metadata)?;

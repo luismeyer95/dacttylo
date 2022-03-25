@@ -1,8 +1,8 @@
 use libp2p::{
     floodsub::{Floodsub, FloodsubEvent, FloodsubMessage},
     kad::{
-        store::MemoryStore, GetRecordResult, Kademlia, KademliaEvent, PutRecordResult, QueryId,
-        QueryResult, Quorum, Record,
+        store::MemoryStore, GetRecordResult, Kademlia, KademliaEvent,
+        PutRecordResult, QueryId, QueryResult, Quorum, Record,
     },
     mdns::{Mdns, MdnsEvent},
     swarm::SwarmEvent,
@@ -76,10 +76,13 @@ impl EventLoop {
     pub async fn run(mut self) {
         loop {
             tokio::select! {
+                // Receives P2P events
                 event = self.swarm.next() => {
                     let event = event.expect("Swarm stream ended unexpectedly");
                     self.handle_event(event).await;
                 },
+
+                // Receives the local P2P client commands
                 command = self.command_receiver.next() => match command {
                     Some(c) => self.handle_command(c).await,
                     // Command channel closed, thus shutting down the network event loop
@@ -126,14 +129,16 @@ impl EventLoop {
             }
 
             NetCommand::Sub { topic, sender } => {
-                let result = self.swarm.behaviour_mut().floodsub.subscribe(topic);
+                let result =
+                    self.swarm.behaviour_mut().floodsub.subscribe(topic);
                 sender
                     .send(result)
                     .expect("Unexpected closed P2P client receiver");
             }
 
             NetCommand::Unsub { topic, sender } => {
-                let result = self.swarm.behaviour_mut().floodsub.unsubscribe(topic);
+                let result =
+                    self.swarm.behaviour_mut().floodsub.unsubscribe(topic);
                 sender
                     .send(result)
                     .expect("Unexpected closed P2P client receiver");
@@ -159,8 +164,12 @@ impl EventLoop {
     ) {
         match event {
             SwarmEvent::Behaviour(event) => match event {
-                ComposedEvent::Floodsub(e) => self.handle_floodsub_event(e).await,
-                ComposedEvent::Kademlia(e) => self.handle_kademlia_event(e).await,
+                ComposedEvent::Floodsub(e) => {
+                    self.handle_floodsub_event(e).await
+                }
+                ComposedEvent::Kademlia(e) => {
+                    self.handle_kademlia_event(e).await
+                }
                 ComposedEvent::Mdns(e) => self.handle_mdns_event(e).await,
             },
 
@@ -224,29 +233,35 @@ impl EventLoop {
     #[allow(clippy::single_match)]
     async fn handle_kademlia_event(&mut self, event: KademliaEvent) {
         match event {
-            KademliaEvent::OutboundQueryCompleted { result, id, .. } => match result {
-                QueryResult::PutRecord(result) => {
-                    let sender = self
-                        .pending_put_record
-                        .remove(&id)
-                        .expect("Failed to retrieve pending put record operation");
-                    sender
-                        .send(result)
-                        .expect("Unexpected closed P2P client receiver");
-                }
+            KademliaEvent::OutboundQueryCompleted { result, id, .. } => {
+                match result {
+                    QueryResult::PutRecord(result) => {
+                        let sender = self
+                            .pending_put_record
+                            .remove(&id)
+                            .expect(
+                            "Failed to retrieve pending put record operation",
+                        );
+                        sender
+                            .send(result)
+                            .expect("Unexpected closed P2P client receiver");
+                    }
 
-                QueryResult::GetRecord(result) => {
-                    let sender = self
-                        .pending_get_record
-                        .remove(&id)
-                        .expect("Failed to retrieve pending get record operation");
-                    sender
-                        .send(result)
-                        .expect("Unexpected closed P2P client receiver");
-                }
+                    QueryResult::GetRecord(result) => {
+                        let sender = self
+                            .pending_get_record
+                            .remove(&id)
+                            .expect(
+                            "Failed to retrieve pending get record operation",
+                        );
+                        sender
+                            .send(result)
+                            .expect("Unexpected closed P2P client receiver");
+                    }
 
-                _ => {}
-            },
+                    _ => {}
+                }
+            }
             _ => {}
         }
     }
