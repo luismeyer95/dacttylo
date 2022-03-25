@@ -49,7 +49,7 @@ async fn init_session() -> AsyncResult<()> {
 
     match cli.command {
         Commands::Practice(practice_opts) => {
-            practice::init_practice_session(practice_opts).await?;
+            practice::run_practice_session(practice_opts).await?;
         }
         // Commands::Host { user, file } => {}
         // Commands::Join { user, host } => {}

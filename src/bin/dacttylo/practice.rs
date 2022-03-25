@@ -7,7 +7,7 @@ use dacttylo::{
         widget::DacttyloWidget,
         InputResult, Progress,
     },
-    cli::PracticeOptions,
+    cli::{PracticeOptions, Save},
     events::{app_event, AppEvent, EventAggregator},
     ghost::Ghost,
     highlighting::{Highlighter, SyntectHighlighter},
@@ -22,7 +22,7 @@ use dacttylo::{
 };
 use figlet_rs::FIGfont;
 use once_cell::sync::OnceCell;
-use std::{io::Stdout, time::Duration};
+use std::{fs::read_to_string, io::Stdout, time::Duration};
 use syntect::highlighting::Theme;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
@@ -49,39 +49,20 @@ enum SessionEnd {
     Quit,
 }
 
-// test commit
-
-pub async fn init_practice_session(
+pub async fn run_practice_session(
     practice_opts: PracticeOptions,
 ) -> AsyncResult<()> {
-    let result = run_practice_session(practice_opts).await;
-
-    result
-}
-
-async fn run_practice_session(
-    practice_opts: PracticeOptions,
-) -> AsyncResult<()> {
-    let text = std::fs::read_to_string(&practice_opts.file)?;
-    let (main, opponents) = initialize_players(&text);
-
-    let lines: Vec<&str> = text.split_inclusive('\n').collect();
-    let styled_lines = apply_highlighting(&lines, &practice_opts.file)?;
-
     let (client, events) = configure_event_stream();
-    // let mut ghost = initialize_ghost(&text, client.clone())?;
     spawn_ticker(client.clone());
-
-    // ghost.start().await?;
 
     let mut term = enter_tui_mode(std::io::stdout())?;
     let session_result =
-        handle_events(&mut term, main, opponents, events, client, styled_lines)
-            .await;
+        handle_events(&mut term, client, events, practice_opts).await;
     leave_tui_mode(term)?;
 
     // display session results
-    Ok(())
+
+    session_result.map(|_| ())
 }
 
 pub fn spawn_ticker(client: Sender<AppEvent>) {
@@ -97,15 +78,10 @@ pub fn initialize_ghost(
     text: &str,
     client: Sender<AppEvent>,
 ) -> AsyncResult<Ghost> {
-    let input_record =
-        RecordManager::mount_dir("records")?.load_from_contents(text)?;
+    let input_record = RecordManager::mount_dir("records")?
+        .load_from_contents(text)
+        .map_err(|_| "no ghost record found for this file")?;
     Ok(Ghost::new(input_record, client))
-}
-
-pub fn initialize_players(text: &'_ str) -> (PlayerState<'_>, PlayerPool<'_>) {
-    let main = PlayerState::new(text);
-    let opponents = PlayerPool::new(text).with_players(&["ghost"]);
-    (main, opponents)
 }
 
 pub fn configure_event_stream() -> (Sender<AppEvent>, EventAggregator<AppEvent>)
@@ -120,26 +96,38 @@ pub fn get_theme(theme: &str) -> &'static Theme {
     &ts.themes[theme]
 }
 
-pub fn apply_highlighting<'t>(
-    lines: &[&'t str],
-    file: &str,
+pub fn format_and_style<'t>(
+    text: &'t str,
+    practice_opts: &PracticeOptions,
 ) -> AsyncResult<Vec<Vec<StyledGrapheme<'t>>>> {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+
     let hl = SyntectHighlighter::new()
-        .from_file(file.into())?
+        .from_file((&practice_opts.file).into())?
         .theme(get_theme(THEME))
         .build()?;
 
-    Ok(hl.highlight(lines))
+    Ok(hl.highlight(&lines))
 }
 
 async fn handle_events(
     term: &mut Terminal<CrosstermBackend<Stdout>>,
-    mut main: PlayerState<'_>,
-    mut opponents: PlayerPool<'_>,
-    mut events: EventAggregator<AppEvent>,
     client: Sender<AppEvent>,
-    styled_lines: Vec<Vec<StyledGrapheme<'_>>>,
+    mut events: EventAggregator<AppEvent>,
+    practice_opts: PracticeOptions,
 ) -> AsyncResult<SessionEnd> {
+    let text = read_to_string(&practice_opts.file)?;
+    let styled_lines = format_and_style(&text, &practice_opts)?;
+
+    let mut main = PlayerState::new(&text);
+    let mut opponents = if practice_opts.ghost {
+        let mut ghost = initialize_ghost(&text, client.clone())?;
+        ghost.start().await?;
+        PlayerPool::new(&text).with_players(&["ghost"])
+    } else {
+        PlayerPool::new(&text)
+    };
+
     let mut recorder = InputResultRecorder::new();
     let mut stats = SessionStats::default();
 
@@ -152,6 +140,9 @@ async fn handle_events(
         };
 
         if let SessionState::End(end) = session_state {
+            if let SessionEnd::Finished(_) = &end {
+                handle_saved_record_state(&text, recorder, practice_opts)?;
+            }
             return Ok(end);
         }
 
@@ -159,6 +150,36 @@ async fn handle_events(
     }
 
     unreachable!();
+}
+
+fn handle_saved_record_state(
+    text: &str,
+    recorder: InputResultRecorder,
+    practice_opts: PracticeOptions,
+) -> AsyncResult<()> {
+    if let Some(save) = practice_opts.save {
+        let manager = RecordManager::mount_dir("records").unwrap();
+
+        match save {
+            Save::Override => manager.save(text, recorder.record())?,
+
+            Save::Best => {
+                if let Ok(old_record) = manager.load_from_contents(text) {
+                    let (old_elapsed, _) = old_record.inputs.last().unwrap();
+                    let (current_elapsed, _) =
+                        recorder.record().inputs.last().unwrap();
+
+                    if current_elapsed.duration < old_elapsed.duration {
+                        manager.save(text, recorder.record())?;
+                    }
+                } else {
+                    manager.save(text, recorder.record())?;
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn handle_term(
@@ -181,8 +202,6 @@ fn handle_term(
             recorder.push(input_result);
 
             if let InputResult::Correct(Progress::Finished) = input_result {
-                // let manager = RecordManager::mount_dir("records").unwrap();
-                // manager.save(main.text(), recorder.record()).unwrap();
                 return SessionState::End(SessionEnd::Finished(SessionResult));
             }
         }
@@ -280,11 +299,7 @@ fn render_text(
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .style(Style::default().bg(Color::Reset).fg(Color::White))
-        .title(Span::styled(
-            "Text",
-            Style::default().add_modifier(Modifier::BOLD),
-        ));
+        .style(Style::default().bg(Color::Reset).fg(Color::White));
 
     let bg = get_theme(THEME).settings.background.unwrap();
 

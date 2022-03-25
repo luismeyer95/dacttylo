@@ -7,7 +7,7 @@ use std::time::Duration;
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Elapsed {
     #[serde_as(as = "DurationMilliSeconds<u64>")]
-    duration: Duration,
+    pub duration: Duration,
 }
 
 impl From<Duration> for Elapsed {
