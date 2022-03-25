@@ -1,6 +1,7 @@
+use clap::ArgEnum;
 pub use clap::{AppSettings, Parser, Subcommand};
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[clap(author, version, about)]
 #[clap(global_setting(AppSettings::PropagateVersion))]
 #[clap(global_setting(AppSettings::UseLongFormatForHelpSubcommand))]
@@ -38,7 +39,21 @@ pub enum Commands {
         /// The file to practice on
         #[clap(short, long)]
         file: String,
+
+        /// Replay record inputs for this session
+        #[clap(short, long)]
+        ghost: bool,
+
+        /// Trigger record state changes after the session
+        #[clap(arg_enum, short, long)]
+        save: Option<Save>,
     },
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
+pub enum Save {
+    Best,
+    Override,
 }
 
 pub fn parse() -> Cli {

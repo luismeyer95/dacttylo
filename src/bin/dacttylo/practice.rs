@@ -54,11 +54,34 @@ pub async fn init_practice_session(practice_file: String) -> AsyncResult<()> {
     result
 }
 
-pub fn initialize_wpm_ticker(client: Sender<AppEvent>) {
+async fn run_practice_session(file: String) -> AsyncResult<()> {
+    let text = std::fs::read_to_string(&file)?;
+    let (main, opponents) = initialize_players(&text);
+
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let styled_lines = apply_highlighting(&lines, &file)?;
+
+    let (client, events) = configure_event_stream();
+    // let mut ghost = initialize_ghost(&text, client.clone())?;
+    spawn_ticker(client.clone());
+
+    // ghost.start().await?;
+
+    let mut term = enter_tui_mode(std::io::stdout())?;
+    let session_result =
+        handle_events(&mut term, main, opponents, events, client, styled_lines)
+            .await;
+    leave_tui_mode(term)?;
+
+    // display session results
+    Ok(())
+}
+
+pub fn spawn_ticker(client: Sender<AppEvent>) {
     tokio::spawn(async move {
         loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
             client.send(AppEvent::WpmTick).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });
 }
@@ -70,30 +93,6 @@ pub fn initialize_ghost(
     let input_record =
         RecordManager::mount_dir("records")?.load_from_contents(text)?;
     Ok(Ghost::new(input_record, client))
-}
-
-async fn run_practice_session(file: String) -> AsyncResult<()> {
-    let text = std::fs::read_to_string(&file)?;
-    let (main, opponents) = initialize_players(&text);
-
-    let lines: Vec<&str> = text.split_inclusive('\n').collect();
-    let styled_lines = apply_highlighting(&lines, &file)?;
-
-    let (client, events) = configure_event_stream();
-    // let mut ghost = initialize_ghost(&text, client.clone())?;
-    initialize_wpm_ticker(client.clone());
-
-    client.send(AppEvent::Tick).await?;
-    // ghost.start().await?;
-
-    let mut term = enter_tui_mode(std::io::stdout())?;
-    let session_result =
-        handle_events(&mut term, main, opponents, events, client, styled_lines)
-            .await;
-    leave_tui_mode(term)?;
-
-    // display session results
-    Ok(())
 }
 
 pub fn initialize_players(text: &'_ str) -> (PlayerState<'_>, PlayerPool<'_>) {

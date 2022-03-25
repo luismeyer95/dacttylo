@@ -44,8 +44,11 @@ async fn main() -> AsyncResult<()> {
 async fn init_session() -> AsyncResult<()> {
     let cli = dacttylo::cli::parse();
 
+    println!("{:?}", cli);
+    return Ok(());
+
     match cli.command {
-        Commands::Practice { file } => {
+        Commands::Practice { file, .. } => {
             practice::init_practice_session(file).await?;
         }
         // Commands::Host { user, file } => {}

@@ -4,7 +4,7 @@ WPM Feature Behaviour:
     -> use color presets depending on the typing speed
     -> maybe also use a graph and display speed over time
 
-Requirements:
+Implementation:
     -> how to compute the wpm speed?
         * a "word" can be considered to be 5 characters on average, so we can work with CPM and convert to WPM (= CPM / 5)
         * the inputs over which the speed is computed should be "correct" inputs relative to the session, only inputs that advanced the cursor are valid
@@ -18,6 +18,8 @@ Requirements:
         * how to trigger a render? should the computation happen before each render?
             - create new app event variant WPM, create a task with a ticker that sends a WPM event every second
 
+------------------------------------------------------------------------------
+
 Typing Session Report Feature Behaviour:
     -> at the end of a session, present the user with a session report
     -> includes
@@ -26,7 +28,7 @@ Typing Session Report Feature Behaviour:
         * precision % (correct inputs / total inputs)
         * 5 worst characters
 
-Requirements:
+Implementation:
     -> record all session input results (correct and wrong), wrong inputs should come with metadata (got vs expected)
     -> all the stats can be derived from the input result collection + session start timestamp
         * average wpm:
@@ -52,22 +54,32 @@ Requirements:
                 return (char, char_stat.count())
             })
             5_worst = charstats.sort_by_descending_count().take(5)
-    
+
+------------------------------------------------------------------------------
 
 Ghost Feature Behaviour:
     -> allow the user to race against his past self in a practice session
     -> opt-in with a CLI flag in practice mode
     -> the ghost is represented by a grey cursor to minimize visual distraction
 
+Implementation:
+    -> need customizable behaviour when it comes to:
+        * using the saved record as ghost for the current session
+            --ghost,-g boolean option
+        * managing the saved record's state at the end of the session
+            --save,-s enum option (best, override)
+
+------------------------------------------------------------------------------
+
 
 Mistake Highlighting Feature:
     -> color mistakes in yellow
-Requirements:
+Implementation:
     -> keep track of wrong input result positions/coords in the practice text
     -> apply permanent yellow bg highlighting at these positions
 
 QOL Features:
     -> word wrapping
     -> skip trailing wp
-Requirements:
+Implementation:
     -> change line processor to apply word wrapping
