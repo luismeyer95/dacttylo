@@ -7,6 +7,7 @@ use dacttylo::{
         widget::DacttyloWidget,
         InputResult, Progress,
     },
+    cli::PracticeOptions,
     events::{app_event, AppEvent, EventAggregator},
     ghost::Ghost,
     highlighting::{Highlighter, SyntectHighlighter},
@@ -48,18 +49,22 @@ enum SessionEnd {
     Quit,
 }
 
-pub async fn init_practice_session(practice_file: String) -> AsyncResult<()> {
-    let result = run_practice_session(practice_file).await;
+pub async fn init_practice_session(
+    practice_opts: PracticeOptions,
+) -> AsyncResult<()> {
+    let result = run_practice_session(practice_opts).await;
 
     result
 }
 
-async fn run_practice_session(file: String) -> AsyncResult<()> {
-    let text = std::fs::read_to_string(&file)?;
+async fn run_practice_session(
+    practice_opts: PracticeOptions,
+) -> AsyncResult<()> {
+    let text = std::fs::read_to_string(&practice_opts.file)?;
     let (main, opponents) = initialize_players(&text);
 
     let lines: Vec<&str> = text.split_inclusive('\n').collect();
-    let styled_lines = apply_highlighting(&lines, &file)?;
+    let styled_lines = apply_highlighting(&lines, &practice_opts.file)?;
 
     let (client, events) = configure_event_stream();
     // let mut ghost = initialize_ghost(&text, client.clone())?;

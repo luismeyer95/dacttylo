@@ -1,5 +1,5 @@
-use clap::ArgEnum;
 pub use clap::{AppSettings, Parser, Subcommand};
+use clap::{ArgEnum, Args};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -14,40 +14,49 @@ pub struct Cli {
 #[derive(Subcommand, Clone, Debug)]
 pub enum Commands {
     /// Host a game
-    Host {
-        /// Your username
-        #[clap(short, long)]
-        user: String,
-
-        /// Path to the file to race on
-        #[clap(short, long)]
-        file: String,
-    },
+    Host(HostOptions),
 
     /// Join a game
-    Join {
-        /// The host to join
-        host: String,
-
-        /// Your username
-        #[clap(short, long)]
-        user: String,
-    },
+    Join(JoinOptions),
 
     /// Solo practice session
-    Practice {
-        /// The file to practice on
-        #[clap(short, long)]
-        file: String,
+    Practice(PracticeOptions),
+}
 
-        /// Replay record inputs for this session
-        #[clap(short, long)]
-        ghost: bool,
+#[derive(Args, Clone, Debug)]
+pub struct HostOptions {
+    /// Your username
+    #[clap(short, long)]
+    pub user: String,
 
-        /// Trigger record state changes after the session
-        #[clap(arg_enum, short, long)]
-        save: Option<Save>,
-    },
+    /// Path to the file to race on
+    #[clap(short, long)]
+    pub file: String,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct JoinOptions {
+    /// The host to join
+    pub host: String,
+
+    /// Your username
+    #[clap(short, long)]
+    pub user: String,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct PracticeOptions {
+    /// The file to practice on
+    #[clap(short, long)]
+    pub file: String,
+
+    /// Replay record inputs for this session
+    #[clap(short, long)]
+    pub ghost: bool,
+
+    /// Trigger record state changes after the session
+    #[clap(arg_enum, short, long)]
+    pub save: Option<Save>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
