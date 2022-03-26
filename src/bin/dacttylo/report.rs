@@ -114,40 +114,6 @@ fn render_data<B: Backend>(
     }
 }
 
-fn render_ranking<B: Backend>(
-    frame: &mut Frame<B>,
-    area: Rect,
-    ranking: &Ranking,
-) {
-    let podium = ["🥇", "🥈", "🥉"];
-    let text = ranking
-        .names
-        .iter()
-        .enumerate()
-        .map(|(i, name)| match podium.get(i) {
-            Some(&medal) => format!("{} {}", medal, name),
-            None => name.clone(),
-        })
-        .collect::<Vec<_>>()
-        .join("\r\n");
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .style(Style::default().bg(Color::Reset).fg(Color::White))
-        .title(Span::styled(
-            "Ranking",
-            Style::default().add_modifier(Modifier::BOLD),
-        ));
-
-    frame.render_widget(
-        Paragraph::new(Text::from(text))
-            .style(Style::default().bg(Color::Reset).fg(Color::White))
-            .block(block)
-            .alignment(Alignment::Center),
-        area,
-    );
-}
-
 fn render_stats<B: Backend>(
     f: &mut Frame<B>,
     area: Rect,
@@ -163,12 +129,59 @@ fn render_stats<B: Backend>(
             Style::default().add_modifier(Modifier::BOLD),
         ));
 
-    let stats_widget = Paragraph::new(Text::from(stats_fmt))
-        .style(Style::default().bg(Color::Reset).fg(Color::White))
-        .block(block)
-        .alignment(Alignment::Left);
+    f.render_widget(block, area);
 
-    f.render_widget(stats_widget, area);
+    let center = Layout::default()
+        .direction(Direction::Horizontal)
+        .margin(2)
+        .constraints([Constraint::Percentage(100)].as_ref())
+        .split(area)[0];
+
+    let paragraph = Paragraph::new(Text::from(stats_fmt))
+        .style(Style::default().bg(Color::Reset).fg(Color::White))
+        .alignment(Alignment::Center);
+
+    f.render_widget(paragraph, center);
+}
+
+fn render_ranking<B: Backend>(
+    frame: &mut Frame<B>,
+    area: Rect,
+    ranking: &Ranking,
+) {
+    let podium = ["🥇", "🥈", "🥉"];
+    let text = ranking
+        .names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| match podium.get(i) {
+            Some(&medal) => format!("{medal} {name}"),
+            None => format!("💩 {name}"),
+        })
+        .collect::<Vec<_>>()
+        .join("\r\n");
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default().bg(Color::Reset).fg(Color::White))
+        .title(Span::styled(
+            "Ranking",
+            Style::default().add_modifier(Modifier::BOLD),
+        ));
+
+    frame.render_widget(block, area);
+
+    let center = Layout::default()
+        .direction(Direction::Horizontal)
+        .margin(2)
+        .constraints([Constraint::Percentage(100)].as_ref())
+        .split(area)[0];
+
+    let paragraph = Paragraph::new(Text::from(text))
+        .style(Style::default().bg(Color::Reset).fg(Color::White))
+        .alignment(Alignment::Center);
+
+    frame.render_widget(paragraph, center);
 }
 
 fn render_chart(

@@ -62,22 +62,16 @@ pub async fn run_practice_session(
     let session_result =
         handle_events(&mut term, client, events, practice_opts).await;
 
-    match session_result {
-        Ok(None) => {
-            leave_tui_mode(term)?;
-            Ok(())
-        }
+    let result = match session_result {
         Ok(Some(session_result)) => {
-            display_session_report(&mut term, session_result.clone()).await;
-            leave_tui_mode(term)?;
-            println!("{:?}", session_result);
-            Ok(())
+            display_session_report(&mut term, session_result).await
         }
-        Err(e) => {
-            leave_tui_mode(term)?;
-            Err(e)
-        }
-    }
+        Ok(None) => Ok(()),
+        Err(e) => Err(e),
+    };
+
+    leave_tui_mode(term)?;
+    result
 }
 
 pub fn spawn_ticker(client: Sender<AppEvent>) {
