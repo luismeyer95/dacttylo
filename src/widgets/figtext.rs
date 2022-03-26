@@ -64,7 +64,13 @@ impl<'f, 'b> Widget for FigTextWidget<'f, 'b> {
             ..area.top() + offset_y + max_height)
             .enumerate()
         {
-            buf.set_string(area.left() + offset_x, y, &rows[i], style);
+            buf.set_stringn(
+                area.left() + offset_x,
+                y,
+                &rows[i],
+                area.width as usize,
+                style,
+            );
         }
     }
 }

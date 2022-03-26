@@ -192,7 +192,7 @@ fn render_chart(
         .block(
             Block::default()
                 .title(Span::styled(
-                    "WPM",
+                    "WPM Over Time",
                     Style::default()
                         .fg(Color::White)
                         .add_modifier(Modifier::BOLD),

@@ -321,7 +321,6 @@ fn render(
             .split(chunks[0]);
         render_dacttylo(f, wpm_chunks[0]);
         render_wpm(f, wpm_chunks[1], stats);
-
         render_text(f, chunks[1], main, opponents, styled_lines);
     })?;
 
@@ -340,7 +339,7 @@ pub fn load_wpm_font() -> &'static FIGfont {
 pub fn load_title_font() -> &'static FIGfont {
     static FONT: OnceCell<FIGfont> = OnceCell::new();
     FONT.get_or_init(|| {
-        let bytes = include_bytes!("figfonts/block.flf");
+        let bytes = include_bytes!("figfonts/slant.flf");
         let s = std::str::from_utf8(bytes).unwrap();
         FIGfont::from_content(s).unwrap()
     })
@@ -378,7 +377,13 @@ fn render_text(
 }
 
 fn render_dacttylo(f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default().bg(Color::Reset).fg(Color::White));
+
     let font = load_title_font();
-    let figtext = FigTextWidget::new("dacttylo", font).align(Alignment::Center);
+    let figtext = FigTextWidget::new("dacttylo", font)
+        .align(Alignment::Center)
+        .block(block);
     f.render_widget(figtext, area);
 }

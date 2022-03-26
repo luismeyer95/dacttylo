@@ -35,6 +35,12 @@ impl<'f> Widget for WpmWidget<'f> {
         let style = Style::default().fg(speed_color(self.wpm));
         let max_height = min(rows.len() as u16, area.height);
 
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                buf.get_mut(x, y).set_symbol(" ");
+            }
+        }
+
         for (i, y) in (area.top() + offset_y
             ..area.top() + offset_y + max_height)
             .enumerate()
