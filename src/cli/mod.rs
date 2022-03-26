@@ -46,15 +46,15 @@ pub struct JoinOptions {
 
 #[derive(Args, Clone, Debug)]
 pub struct PracticeOptions {
-    /// The file to practice on
+    /// Pick a text file to practice on
     #[clap(short, long)]
     pub file: String,
 
-    /// Replay record inputs for this session
+    /// Race against your past self using an input record from a previous session with this file
     #[clap(short, long)]
     pub ghost: bool,
 
-    /// Trigger record state changes after the session
+    /// Update the input record for this file
     #[clap(arg_enum, short, long)]
     pub save: Option<Save>,
 }

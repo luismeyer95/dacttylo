@@ -141,7 +141,7 @@ async fn handle_events(
 
         if let SessionState::End(end) = session_state {
             if let SessionEnd::Finished(_) = &end {
-                handle_saved_record_state(&text, recorder, practice_opts)?;
+                update_record_state(&text, recorder, practice_opts)?;
             }
             return Ok(end);
         }
@@ -152,13 +152,13 @@ async fn handle_events(
     unreachable!();
 }
 
-fn handle_saved_record_state(
+fn update_record_state(
     text: &str,
     recorder: InputResultRecorder,
     practice_opts: PracticeOptions,
 ) -> AsyncResult<()> {
     if let Some(save) = practice_opts.save {
-        let manager = RecordManager::mount_dir("records").unwrap();
+        let manager = RecordManager::mount_dir("records")?;
 
         match save {
             Save::Override => manager.save(text, recorder.record())?,
@@ -231,16 +231,11 @@ fn handle_ghost_input(
     input: InputResult,
     opponents: &mut PlayerPool,
 ) -> SessionState {
-    match input {
-        InputResult::Correct(Progress::Finished) => {
-            SessionState::End(SessionEnd::Finished(SessionResult))
-        }
-        InputResult::Correct(Progress::Ongoing) => {
-            opponents.advance_player("ghost").unwrap();
-            SessionState::Ongoing
-        }
-        _ => SessionState::Ongoing,
+    if let InputResult::Correct(Progress::Ongoing) = input {
+        opponents.advance_player("ghost").unwrap();
     }
+
+    SessionState::Ongoing
 }
 
 fn render(
