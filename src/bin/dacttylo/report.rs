@@ -119,11 +119,15 @@ fn render_ranking<B: Backend>(
     area: Rect,
     ranking: &Ranking,
 ) {
+    let podium = ["🥇", "🥈", "🥉"];
     let text = ranking
         .names
         .iter()
         .enumerate()
-        .map(|(i, name)| format!("{}. {}", i + 1, name))
+        .map(|(i, name)| match podium.get(i) {
+            Some(&medal) => format!("{} {}", medal, name),
+            None => name.clone(),
+        })
         .collect::<Vec<_>>()
         .join("\r\n");
 
