@@ -22,7 +22,7 @@ use dacttylo::{
         tui::{enter_tui_mode, leave_tui_mode},
         types::StyledLine,
     },
-    widgets::wpm::WpmWidget,
+    widgets::{figtext::FigTextWidget, wpm::WpmWidget},
 };
 use figlet_rs::FIGfont;
 use once_cell::sync::OnceCell;
@@ -32,7 +32,7 @@ use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
 use tui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols,
     text::{Span, StyledGrapheme},
@@ -319,7 +319,7 @@ fn render(
                     .as_ref(),
             )
             .split(chunks[0]);
-        render_chart(f, wpm_chunks[0], stats);
+        render_dacttylo(f, wpm_chunks[0]);
         render_wpm(f, wpm_chunks[1], stats);
 
         render_text(f, chunks[1], main, opponents, styled_lines);
@@ -332,6 +332,15 @@ pub fn load_wpm_font() -> &'static FIGfont {
     static FONT: OnceCell<FIGfont> = OnceCell::new();
     FONT.get_or_init(|| {
         let bytes = include_bytes!("figfonts/lcd.flf");
+        let s = std::str::from_utf8(bytes).unwrap();
+        FIGfont::from_content(s).unwrap()
+    })
+}
+
+pub fn load_title_font() -> &'static FIGfont {
+    static FONT: OnceCell<FIGfont> = OnceCell::new();
+    FONT.get_or_init(|| {
+        let bytes = include_bytes!("figfonts/block.flf");
         let s = std::str::from_utf8(bytes).unwrap();
         FIGfont::from_content(s).unwrap()
     })
@@ -368,59 +377,8 @@ fn render_text(
     );
 }
 
-fn render_chart(
-    f: &mut Frame<CrosstermBackend<Stdout>>,
-    area: Rect,
-    stats: &SessionStats,
-) {
-    let data = stats
-        .wpm_series
-        .windows(30)
-        .last()
-        .unwrap_or_else(|| stats.wpm_series.as_slice());
-
-    let last = data.last().map_or(0.0, |(secs, _)| *secs);
-    let x_bounds = [last - 30.0, last];
-
-    let datasets = vec![Dataset::default()
-        .name("WPM")
-        .marker(symbols::Marker::Braille)
-        .graph_type(GraphType::Line)
-        .style(Style::default().fg(Color::Yellow))
-        .data(data)];
-
-    let chart = Chart::new(datasets)
-        .block(
-            Block::default()
-                .title(Span::styled(
-                    "WPM",
-                    Style::default()
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD),
-                ))
-                .borders(Borders::ALL),
-        )
-        .x_axis(
-            Axis::default()
-                .title("Seconds")
-                .style(Style::default().fg(Color::Gray))
-                .bounds(x_bounds),
-        )
-        .y_axis(
-            Axis::default()
-                // .title("WPM")
-                .style(Style::default().fg(Color::Gray))
-                .labels(vec![
-                    Span::styled(
-                        "0",
-                        Style::default().add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        "100",
-                        Style::default().add_modifier(Modifier::BOLD),
-                    ),
-                ])
-                .bounds([0.0, 150.0]),
-        );
-    f.render_widget(chart, area);
+fn render_dacttylo(f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    let font = load_title_font();
+    let figtext = FigTextWidget::new("dacttylo", font).align(Alignment::Center);
+    f.render_widget(figtext, area);
 }
