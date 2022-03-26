@@ -1,4 +1,8 @@
-use crate::{app::InputResult, events::AppEvent, record::{elapsed::Elapsed, input::InputResultRecord}};
+use crate::{
+    app::InputResult,
+    events::AppEvent,
+    record::{elapsed::Elapsed, input::InputResultRecord},
+};
 use std::error::Error;
 use tokio::sync::mpsc::Sender;
 
@@ -40,7 +44,9 @@ impl Ghost {
             let delta = elapsed.saturating_sub(now.duration_since(start));
 
             tokio::time::sleep(delta).await;
-            tx.send(AppEvent::GhostInput(char)).await.unwrap();
+            if tx.send(AppEvent::GhostInput(char)).await.is_err() {
+                break;
+            }
         }
     }
 }

@@ -1,4 +1,7 @@
-use crate::AsyncResult;
+use crate::{
+    report::{display_session_report, Ranking, SessionResult},
+    AsyncResult,
+};
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use dacttylo::{
     aggregate,
@@ -11,9 +14,10 @@ use dacttylo::{
     events::{app_event, AppEvent, EventAggregator},
     ghost::Ghost,
     highlighting::{Highlighter, SyntectHighlighter},
-    record::{manager::RecordManager, recorder::InputResultRecorder},
+    record::manager::RecordManager,
     stats::SessionStats,
     utils::{
+        self,
         syntect::syntect_load_defaults,
         tui::{enter_tui_mode, leave_tui_mode},
         types::StyledLine,
@@ -37,7 +41,6 @@ use tui::{
 };
 
 const THEME: &str = "Solarized (dark)";
-pub struct SessionResult;
 
 enum SessionState {
     Ongoing,
@@ -45,7 +48,7 @@ enum SessionState {
 }
 
 enum SessionEnd {
-    Finished(SessionResult),
+    Finished,
     Quit,
 }
 
@@ -58,17 +61,31 @@ pub async fn run_practice_session(
     let mut term = enter_tui_mode(std::io::stdout())?;
     let session_result =
         handle_events(&mut term, client, events, practice_opts).await;
-    leave_tui_mode(term)?;
 
-    // display session results
-
-    session_result.map(|_| ())
+    match session_result {
+        Ok(None) => {
+            leave_tui_mode(term)?;
+            Ok(())
+        }
+        Ok(Some(session_result)) => {
+            display_session_report(&mut term, session_result.clone()).await;
+            leave_tui_mode(term)?;
+            println!("{:?}", session_result);
+            Ok(())
+        }
+        Err(e) => {
+            leave_tui_mode(term)?;
+            Err(e)
+        }
+    }
 }
 
 pub fn spawn_ticker(client: Sender<AppEvent>) {
     tokio::spawn(async move {
         loop {
-            client.send(AppEvent::WpmTick).await.unwrap();
+            if client.send(AppEvent::WpmTick).await.is_err() {
+                break;
+            }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });
@@ -114,12 +131,16 @@ async fn handle_events(
     term: &mut Terminal<CrosstermBackend<Stdout>>,
     client: Sender<AppEvent>,
     mut events: EventAggregator<AppEvent>,
-    practice_opts: PracticeOptions,
-) -> AsyncResult<SessionEnd> {
+    mut practice_opts: PracticeOptions,
+) -> AsyncResult<Option<SessionResult>> {
     let text = read_to_string(&practice_opts.file)?;
     let styled_lines = format_and_style(&text, &practice_opts)?;
 
-    let mut main = PlayerState::new(&text);
+    let username = practice_opts
+        .username
+        .take()
+        .unwrap_or_else(|| "you".into());
+    let mut main = PlayerState::new(username, &text);
     let mut opponents = if practice_opts.ghost {
         let mut ghost = initialize_ghost(&text, client.clone())?;
         ghost.start().await?;
@@ -128,22 +149,24 @@ async fn handle_events(
         PlayerPool::new(&text)
     };
 
-    let mut recorder = InputResultRecorder::new();
     let mut stats = SessionStats::default();
 
     while let Some(event) = events.next().await {
-        let session_state = match event {
-            AppEvent::Term(e) => handle_term(e?, &mut main, &mut recorder),
-            AppEvent::GhostInput(c) => handle_ghost_input(c, &mut opponents),
-            AppEvent::WpmTick => handle_wpm_tick(&mut stats, &recorder),
-            _ => SessionState::Ongoing,
-        };
+        let session_state =
+            handle_event(event, &mut main, &mut opponents, &mut stats)?;
 
         if let SessionState::End(end) = session_state {
-            if let SessionEnd::Finished(_) = &end {
-                update_record_state(&text, recorder, practice_opts)?;
+            if let SessionEnd::Finished = &end {
+                update_record_state(&text, &main, &practice_opts)?;
+                return Ok(Some(generate_session_result(
+                    stats,
+                    main,
+                    opponents,
+                    practice_opts,
+                )));
+            } else {
+                return Ok(None);
             }
-            return Ok(end);
         }
 
         render(term, &main, &opponents, &stats, &styled_lines)?;
@@ -152,40 +175,55 @@ async fn handle_events(
     unreachable!();
 }
 
-fn update_record_state(
-    text: &str,
-    recorder: InputResultRecorder,
+fn generate_session_result(
+    stats: SessionStats,
+    main: PlayerState,
+    opponents: PlayerPool,
     practice_opts: PracticeOptions,
-) -> AsyncResult<()> {
-    if let Some(save) = practice_opts.save {
-        let manager = RecordManager::mount_dir("records")?;
+) -> SessionResult {
+    if !practice_opts.ghost {
+        SessionResult {
+            stats,
+            ranking: None,
+        }
+    } else {
+        let ghost_progress = opponents.player("ghost").unwrap().get_progress();
+        let (spot, names): (usize, Vec<&str>) =
+            if ghost_progress == Progress::Finished {
+                (1, vec!["ghost", main.name.as_ref()])
+            } else {
+                (0, vec![main.name.as_ref(), "ghost"])
+            };
 
-        match save {
-            Save::Override => manager.save(text, recorder.record())?,
-
-            Save::Best => {
-                if let Ok(old_record) = manager.load_from_contents(text) {
-                    let (old_elapsed, _) = old_record.inputs.last().unwrap();
-                    let (current_elapsed, _) =
-                        recorder.record().inputs.last().unwrap();
-
-                    if current_elapsed.duration < old_elapsed.duration {
-                        manager.save(text, recorder.record())?;
-                    }
-                } else {
-                    manager.save(text, recorder.record())?;
-                }
-            }
+        SessionResult {
+            stats,
+            ranking: Some(Ranking {
+                spot,
+                names: names.iter().map(|&s| s.to_string()).collect(),
+            }),
         }
     }
+}
 
-    Ok(())
+fn handle_event(
+    event: AppEvent,
+    main: &mut PlayerState,
+    opponents: &mut PlayerPool,
+    stats: &mut SessionStats,
+) -> AsyncResult<SessionState> {
+    match event {
+        AppEvent::Term(e) => return Ok(handle_term(e?, main)),
+        AppEvent::GhostInput(c) => handle_ghost_input(c, opponents),
+        AppEvent::WpmTick => handle_wpm_tick(stats, main),
+        _ => (),
+    };
+
+    Ok(SessionState::Ongoing)
 }
 
 fn handle_term(
     term_event: crossterm::event::Event,
     main: &mut PlayerState<'_>,
-    recorder: &mut InputResultRecorder,
 ) -> SessionState {
     if let Event::Key(event) = term_event {
         let KeyEvent { code, .. } = event;
@@ -198,11 +236,10 @@ fn handle_term(
         };
 
         if let Some(c) = c {
-            let input_result = main.process_input(c).unwrap();
-            recorder.push(input_result);
-
-            if let InputResult::Correct(Progress::Finished) = input_result {
-                return SessionState::End(SessionEnd::Finished(SessionResult));
+            if let InputResult::Correct(Progress::Finished) =
+                main.process_input(c).unwrap()
+            {
+                return SessionState::End(SessionEnd::Finished);
             }
         }
     }
@@ -210,10 +247,8 @@ fn handle_term(
     SessionState::Ongoing
 }
 
-fn handle_wpm_tick(
-    stats: &mut SessionStats,
-    recorder: &InputResultRecorder,
-) -> SessionState {
+fn handle_wpm_tick(stats: &mut SessionStats, main: &PlayerState) {
+    let recorder = &main.recorder;
     let record = recorder.record();
     let elapsed = recorder.elapsed();
     let wpm = record.wpm_at(Duration::from_secs(4), elapsed);
@@ -223,19 +258,42 @@ fn handle_wpm_tick(
     stats.top_wpm = f64::max(wpm, stats.top_wpm);
     stats.mistake_count = record.count_wrong();
     stats.precision = record.precision();
-
-    SessionState::Ongoing
 }
 
-fn handle_ghost_input(
-    input: InputResult,
-    opponents: &mut PlayerPool,
-) -> SessionState {
-    if let InputResult::Correct(Progress::Ongoing) = input {
+fn handle_ghost_input(input: InputResult, opponents: &mut PlayerPool) {
+    if let InputResult::Correct(_) = input {
         opponents.advance_player("ghost").unwrap();
     }
+}
 
-    SessionState::Ongoing
+fn update_record_state(
+    text: &str,
+    main: &PlayerState,
+    practice_opts: &PracticeOptions,
+) -> AsyncResult<()> {
+    if let Some(save) = practice_opts.save {
+        let manager = RecordManager::mount_dir("records")?;
+        let record = &main.recorder.record();
+
+        match save {
+            Save::Override => manager.save(text, record)?,
+
+            Save::Best => {
+                if let Ok(old_record) = manager.load_from_contents(text) {
+                    let (old_elapsed, _) = old_record.inputs.last().unwrap();
+                    let (current_elapsed, _) = record.inputs.last().unwrap();
+
+                    if current_elapsed.duration < old_elapsed.duration {
+                        manager.save(text, record)?;
+                    }
+                } else {
+                    manager.save(text, record)?;
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn render(
@@ -270,9 +328,13 @@ fn render(
     Ok(())
 }
 
-pub fn load_font() -> &'static FIGfont {
+pub fn load_wpm_font() -> &'static FIGfont {
     static FONT: OnceCell<FIGfont> = OnceCell::new();
-    FONT.get_or_init(|| FIGfont::from_file("figfonts/lcd.flf").unwrap())
+    FONT.get_or_init(|| {
+        let bytes = include_bytes!("figfonts/lcd.flf");
+        let s = std::str::from_utf8(bytes).unwrap();
+        FIGfont::from_content(s).unwrap()
+    })
 }
 
 fn render_wpm(
@@ -281,7 +343,7 @@ fn render_wpm(
     stats: &SessionStats,
 ) {
     let wpm = stats.wpm_series.last().map_or(0.0, |(_, wpm)| *wpm);
-    let widget = WpmWidget::new(wpm as u32, load_font());
+    let widget = WpmWidget::new(wpm as u32, load_wpm_font());
     f.render_widget(widget, area);
 }
 
@@ -362,26 +424,3 @@ fn render_chart(
         );
     f.render_widget(chart, area);
 }
-
-// fn render_stats(
-//     f: &mut Frame<CrosstermBackend<Stdout>>,
-//     area: Rect,
-//     stats: &SessionStats,
-// ) {
-//     let stats_fmt = format!("{}", stats);
-
-//     let block = Block::default()
-//         .borders(Borders::ALL)
-//         .style(Style::default().bg(Color::Reset).fg(Color::White))
-//         .title(Span::styled(
-//             "Stats",
-//             Style::default().add_modifier(Modifier::BOLD),
-//         ));
-
-//     let stats_widget = Paragraph::new(Text::from(stats_fmt))
-//         .style(Style::default().bg(Color::Reset).fg(Color::White))
-//         .block(block)
-//         .alignment(Alignment::Left);
-
-//     f.render_widget(stats_widget, area);
-// }

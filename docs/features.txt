@@ -78,8 +78,15 @@ Implementation:
     -> keep track of wrong input result positions/coords in the practice text
     -> apply permanent yellow bg highlighting at these positions
 
+------------------------------------------------------------------------------
+
 QOL Features:
     -> word wrapping
     -> skip trailing wp
 Implementation:
     -> change line processor to apply word wrapping
+    -> skip trailing wp
+
+------------------------------------------------------------------------------
+
+Session Report Feature:

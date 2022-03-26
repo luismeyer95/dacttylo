@@ -9,7 +9,10 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use InputResult::*;
 
-use crate::{text_coord::TextCoord, utils::helpers::text_to_line_index};
+use crate::{
+    record::recorder::InputResultRecorder, text_coord::TextCoord,
+    utils::helpers::text_to_line_index,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Progress {
@@ -24,6 +27,9 @@ pub enum InputResult {
 }
 
 pub struct PlayerState<'txt> {
+    pub name: String,
+    pub recorder: InputResultRecorder,
+
     text: &'txt str,
     pos: usize,
     last_input: Option<InputResult>,
@@ -31,29 +37,33 @@ pub struct PlayerState<'txt> {
 }
 
 impl<'txt> PlayerState<'txt> {
-    pub fn new(text: &'txt str) -> Self {
+    pub fn new(name: String, text: &'txt str) -> Self {
         Self {
+            name,
             pos: 0,
             text,
             last_input: None,
             errors: BTreeSet::new(),
+            recorder: InputResultRecorder::new(),
         }
     }
 
     pub fn process_input(&mut self, input_ch: char) -> Option<InputResult> {
         let cursor_ch = self.text.chars().nth(self.pos)?;
 
-        if input_ch == cursor_ch {
+        let input_result = if input_ch == cursor_ch {
             self.pos += 1;
             if cursor_ch == '\n' {
                 self.skip_trailing_wp();
             }
-            self.last_input = Some(Correct(self.get_progress()));
+            Correct(self.get_progress())
         } else {
             self.errors.insert(self.pos);
-            self.last_input = Some(Wrong(cursor_ch));
-        }
+            Wrong(cursor_ch)
+        };
 
+        self.recorder.push(input_result);
+        self.last_input = Some(input_result);
         self.last_input
     }
 
@@ -131,9 +141,10 @@ impl<'txt> PlayerPool<'txt> {
 
     pub fn with_players(mut self, usernames: &[&str]) -> Self {
         for &user in usernames {
+            let username = user.to_string();
             self.players
-                .entry(user.to_string())
-                .or_insert_with(|| PlayerState::new(self.text));
+                .entry(username.clone())
+                .or_insert_with(|| PlayerState::new(username, self.text));
         }
 
         self
@@ -188,7 +199,13 @@ impl<'txt> PlayerPool<'txt> {
         let mut player_tuples = self
             .players()
             .iter()
-            .map(|(_, pstate)| (pstate.cursor(), pstate.last_input()))
+            .filter_map(|(_, pstate)| {
+                if pstate.cursor() < self.text.len() {
+                    Some((pstate.cursor(), pstate.last_input()))
+                } else {
+                    None
+                }
+            })
             .collect::<Vec<_>>();
 
         player_tuples.sort_by(|(ca, _), (cb, _)| ca.cmp(cb));

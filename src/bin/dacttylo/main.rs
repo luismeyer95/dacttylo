@@ -29,6 +29,7 @@ use tokio_stream::StreamExt;
 
 mod multi;
 mod practice;
+mod report;
 
 #[tokio::main]
 async fn main() -> AsyncResult<()> {

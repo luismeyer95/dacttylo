@@ -57,6 +57,10 @@ pub struct PracticeOptions {
     /// Update the input record for this file
     #[clap(arg_enum, short, long)]
     pub save: Option<Save>,
+
+    /// Your username
+    #[clap(short, long)]
+    pub username: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
