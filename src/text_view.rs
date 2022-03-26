@@ -194,9 +194,15 @@ impl<'a, 'ln> Widget for TextView<'a, 'ln> {
         for line in lines {
             let mut x = 0;
             for StyledGrapheme { symbol, style } in line {
-                buf.get_mut(area.left() + x, area.top() + y)
-                    .set_symbol(if symbol.is_empty() { " " } else { symbol })
-                    .set_style(style);
+                if area.left() + x < buf.area.width {
+                    buf.get_mut(area.left() + x, area.top() + y)
+                        .set_symbol(if symbol.is_empty() {
+                            " "
+                        } else {
+                            symbol
+                        })
+                        .set_style(style);
+                }
                 x += symbol.width() as u16;
             }
             y += 1;
