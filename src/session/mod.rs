@@ -3,9 +3,11 @@ pub mod command;
 pub mod data;
 pub mod event;
 
-pub use self::{client::SessionClient, command::SessionCommand, data::SessionData};
+pub use self::{
+    client::SessionClient, command::SessionCommand, data::SessionData,
+};
 
-use crate::network::{NetEvent, P2PClient};
+use crate::network::{P2PClient, P2PEvent};
 use event::SessionEvent;
 use futures::Stream;
 
@@ -14,7 +16,7 @@ pub fn new<T>(
     p2p_stream: T,
 ) -> (SessionClient, impl Stream<Item = SessionEvent>)
 where
-    T: Stream<Item = NetEvent>,
+    T: Stream<Item = P2PEvent>,
 {
     let session_stream = async_stream::stream! {
         for await net_event in p2p_stream {

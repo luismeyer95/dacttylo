@@ -12,7 +12,7 @@ use std::{collections::HashMap, error::Error};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 
-use super::{NetCommand, NetEvent};
+use super::{NetCommand, P2PEvent};
 
 // TODO: figure out how to get rid of this false positive
 
@@ -52,7 +52,7 @@ impl From<FloodsubEvent> for ComposedEvent {
 pub struct EventLoop {
     swarm: Swarm<Behaviour>,
     command_receiver: ReceiverStream<NetCommand>,
-    event_sender: mpsc::Sender<NetEvent>,
+    event_sender: mpsc::Sender<P2PEvent>,
 
     pending_get_record: HashMap<QueryId, oneshot::Sender<GetRecordResult>>,
     pending_put_record: HashMap<QueryId, oneshot::Sender<PutRecordResult>>,
@@ -62,7 +62,7 @@ impl EventLoop {
     pub fn new(
         swarm: Swarm<Behaviour>,
         command_receiver: ReceiverStream<NetCommand>,
-        event_sender: mpsc::Sender<NetEvent>,
+        event_sender: mpsc::Sender<P2PEvent>,
     ) -> Self {
         Self {
             swarm,
@@ -194,7 +194,7 @@ impl EventLoop {
                 ..
             }) => self
                 .event_sender
-                .send(NetEvent::TopicMessage {
+                .send(P2PEvent::TopicMessage {
                     source,
                     topics,
                     data,

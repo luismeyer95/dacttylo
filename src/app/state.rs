@@ -1,28 +1,19 @@
 #![allow(dead_code)]
 
-use std::{
-    collections::{BTreeSet, HashMap},
-    error::Error,
-};
-
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeSet, HashMap};
 use InputResult::*;
 
 use crate::{
-    record::recorder::InputResultRecorder, text_coord::TextCoord,
-    utils::helpers::text_to_line_index,
+    record::recorder::InputResultRecorder,
+    text_coord::TextCoord,
+    utils::{helpers::text_to_line_index, types::AsyncResult},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Progress {
-    Ongoing,
-    Finished,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InputResult {
-    Correct(Progress),
+    Correct,
     Wrong(char),
 }
 
@@ -32,7 +23,8 @@ pub struct PlayerState<'txt> {
 
     text: &'txt str,
     pos: usize,
-    last_input: Option<InputResult>,
+    max_pos: usize,
+
     errors: BTreeSet<usize>,
 }
 
@@ -40,9 +32,9 @@ impl<'txt> PlayerState<'txt> {
     pub fn new(name: String, text: &'txt str) -> Self {
         Self {
             name,
-            pos: 0,
             text,
-            last_input: None,
+            pos: 0,
+            max_pos: text.chars().count(),
             errors: BTreeSet::new(),
             recorder: InputResultRecorder::new(),
         }
@@ -53,18 +45,20 @@ impl<'txt> PlayerState<'txt> {
 
         let input_result = if input_ch == cursor_ch {
             self.pos += 1;
-            if cursor_ch == '\n' {
-                self.skip_trailing_wp();
-            }
-            Correct(self.get_progress())
+
+            // TODO: take whitespace autoskip into account for input recording
+
+            // if cursor_ch == '\n' {
+            //     self.skip_trailing_wp();
+            // }
+            Correct
         } else {
             self.errors.insert(self.pos);
             Wrong(cursor_ch)
         };
 
         self.recorder.push(input_result);
-        self.last_input = Some(input_result);
-        self.last_input
+        Some(input_result)
     }
 
     fn skip_trailing_wp(&mut self) {
@@ -92,12 +86,8 @@ impl<'txt> PlayerState<'txt> {
         coords_lst[0].into()
     }
 
-    pub fn get_progress(&self) -> Progress {
-        if self.pos == self.text.chars().count() {
-            Progress::Finished
-        } else {
-            Progress::Ongoing
-        }
+    pub fn is_done(&self) -> bool {
+        self.pos == self.max_pos
     }
 
     pub fn set_cursor(&mut self, pos: usize) -> Result<(), &'static str> {
@@ -118,7 +108,11 @@ impl<'txt> PlayerState<'txt> {
     }
 
     pub fn last_input(&self) -> Option<InputResult> {
-        self.last_input
+        self.recorder
+            .record()
+            .inputs
+            .last()
+            .map(|(elapsed, input)| input.clone())
     }
 
     pub fn text(&self) -> &str {
@@ -154,7 +148,7 @@ impl<'txt> PlayerPool<'txt> {
         &mut self,
         username: &str,
         input_ch: char,
-    ) -> Result<InputResult, Box<dyn Error>> {
+    ) -> AsyncResult<InputResult> {
         let player = self
             .players
             .get_mut(username)
@@ -167,10 +161,7 @@ impl<'txt> PlayerPool<'txt> {
         Ok(input_result)
     }
 
-    pub fn advance_player(
-        &mut self,
-        username: &str,
-    ) -> Result<(), Box<dyn Error>> {
+    pub fn advance_player(&mut self, username: &str) -> AsyncResult<()> {
         let player = self
             .players
             .get_mut(username)
@@ -191,6 +182,13 @@ impl<'txt> PlayerPool<'txt> {
 
     pub fn text(&self) -> &'txt str {
         self.text
+    }
+
+    pub fn are_done(&self) -> bool {
+        self.players
+            .iter()
+            .map(|(_, state)| state.is_done())
+            .all(|done| done)
     }
 
     pub fn get_cursor_coords(&self) -> HashMap<TextCoord, Option<InputResult>> {

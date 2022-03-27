@@ -5,7 +5,7 @@ pub mod p2p_client;
 
 pub use event_loop::EventLoop;
 pub use net_command::NetCommand;
-pub use net_event::NetEvent;
+pub use net_event::P2PEvent;
 pub use p2p_client::P2PClient;
 
 use libp2p::{
@@ -28,7 +28,9 @@ use self::event_loop::Behaviour;
 
 type AsyncResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
-pub fn generate_noise_keys(id_keys: &identity::Keypair) -> AuthenticKeypair<X25519Spec> {
+pub fn generate_noise_keys(
+    id_keys: &identity::Keypair,
+) -> AuthenticKeypair<X25519Spec> {
     noise::Keypair::<noise::X25519Spec>::new()
         .into_authentic(id_keys)
         .expect("Signing libp2p-noise static DH keypair failed.")
@@ -81,7 +83,7 @@ pub async fn generate_swarm(
 /// - The network task driving the network itself.
 pub async fn new(
     id_keys: identity::Keypair,
-) -> AsyncResult<(P2PClient, impl Stream<Item = NetEvent>, EventLoop)> {
+) -> AsyncResult<(P2PClient, impl Stream<Item = P2PEvent>, EventLoop)> {
     let peer_id = PeerId::from(id_keys.public());
 
     // Create a keypair for authenticated encryption of the transport
@@ -102,6 +104,10 @@ pub async fn new(
     Ok((
         P2PClient::new(command_sender),
         ReceiverStream::new(event_receiver),
-        EventLoop::new(swarm, ReceiverStream::new(command_receiver), event_sender),
+        EventLoop::new(
+            swarm,
+            ReceiverStream::new(command_receiver),
+            event_sender,
+        ),
     ))
 }

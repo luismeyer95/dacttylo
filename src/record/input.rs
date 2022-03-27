@@ -25,7 +25,7 @@ impl InputResultRecord {
                     None
                 }
             })
-            .filter(|ipr| matches!(ipr, InputResult::Correct(_)))
+            .filter(|ipr| matches!(ipr, InputResult::Correct))
             .count() as u32;
 
         let cps = f64::from(sampled_correct) / sampled_size.as_secs_f64();
@@ -35,7 +35,7 @@ impl InputResultRecord {
     pub fn count_correct(&self) -> usize {
         self.inputs
             .iter()
-            .filter(|(_, ipr)| matches!(ipr, InputResult::Correct(_)))
+            .filter(|(_, ipr)| matches!(ipr, InputResult::Correct))
             .count()
     }
 

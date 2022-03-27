@@ -1,66 +1,31 @@
-use crate::{
-    report::{display_session_report, Ranking, SessionResult},
-    AsyncResult,
-};
+use crate::{app::Game, common::*, report::*, AsyncResult};
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use dacttylo::{
     aggregate,
     app::{
         state::{PlayerPool, PlayerState},
-        widget::DacttyloWidget,
-        InputResult, Progress,
+        InputResult,
     },
     cli::{PracticeOptions, Save},
     events::{app_event, AppEvent, EventAggregator},
     ghost::Ghost,
-    highlighting::{Highlighter, SyntectHighlighter},
     record::manager::RecordManager,
     stats::SessionStats,
-    utils::{
-        self,
-        syntect::syntect_load_defaults,
-        tui::{enter_tui_mode, leave_tui_mode},
-        types::StyledLine,
-    },
-    widgets::{figtext::FigTextWidget, wpm::WpmWidget},
+    utils::tui::{enter_tui_mode, leave_tui_mode},
 };
-use figlet_rs::FIGfont;
-use once_cell::sync::OnceCell;
 use std::{fs::read_to_string, io::Stdout, time::Duration};
-use syntect::highlighting::Theme;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
-use tui::{
-    backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    symbols,
-    text::{Span, StyledGrapheme},
-    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType},
-    Frame, Terminal,
-};
-
-const THEME: &str = "Solarized (dark)";
-
-enum SessionState {
-    Ongoing,
-    End(SessionEnd),
-}
-
-enum SessionEnd {
-    Finished,
-    Quit,
-}
+use tui::{backend::CrosstermBackend, Terminal};
 
 pub async fn run_practice_session(
     practice_opts: PracticeOptions,
 ) -> AsyncResult<()> {
-    let (client, events) = configure_event_stream();
-    spawn_ticker(client.clone());
+    let text = read_to_string(&practice_opts.file)?;
+    let game = init_game_state(&text, practice_opts).await?;
 
     let mut term = enter_tui_mode(std::io::stdout())?;
-    let session_result =
-        handle_events(&mut term, client, events, practice_opts).await;
+    let session_result = handle_events(&mut term, game, &text).await;
 
     let result = match session_result {
         Ok(Some(session_result)) => {
@@ -74,15 +39,33 @@ pub async fn run_practice_session(
     result
 }
 
-pub fn spawn_ticker(client: Sender<AppEvent>) {
-    tokio::spawn(async move {
-        loop {
-            if client.send(AppEvent::WpmTick).await.is_err() {
-                break;
-            }
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-    });
+pub async fn init_game_state(
+    text: &str,
+    practice_opts: PracticeOptions,
+) -> AsyncResult<Game<'_, PracticeOptions>> {
+    let (client, events) = configure_event_stream();
+
+    let username = practice_opts.username.as_deref().unwrap_or("you");
+
+    let main = PlayerState::new(username.to_string(), text);
+    let opponents = if practice_opts.ghost {
+        let mut ghost = initialize_ghost(text, client.clone())?;
+        ghost.start().await?;
+        PlayerPool::new(text).with_players(&["ghost"])
+    } else {
+        PlayerPool::new(text)
+    };
+
+    Ok(Game::from(main, opponents, client, events, practice_opts))
+}
+
+pub fn configure_event_stream() -> (Sender<AppEvent>, EventAggregator<AppEvent>)
+{
+    let (client, stream) = app_event::stream();
+    spawn_ticker(client.clone());
+
+    let term_io_stream = crossterm::event::EventStream::new();
+    (client, aggregate!([stream, term_io_stream] as AppEvent))
 }
 
 pub fn initialize_ghost(
@@ -95,75 +78,33 @@ pub fn initialize_ghost(
     Ok(Ghost::new(input_record, client))
 }
 
-pub fn configure_event_stream() -> (Sender<AppEvent>, EventAggregator<AppEvent>)
-{
-    let (client, stream) = app_event::stream();
-    let term_io_stream = crossterm::event::EventStream::new();
-    (client, aggregate!([stream, term_io_stream] as AppEvent))
-}
-
-pub fn get_theme(theme: &str) -> &'static Theme {
-    let (_, ts) = syntect_load_defaults();
-    &ts.themes[theme]
-}
-
-pub fn format_and_style<'t>(
-    text: &'t str,
-    practice_opts: &PracticeOptions,
-) -> AsyncResult<Vec<Vec<StyledGrapheme<'t>>>> {
-    let lines: Vec<&str> = text.split_inclusive('\n').collect();
-
-    let hl = SyntectHighlighter::new()
-        .from_file((&practice_opts.file).into())?
-        .theme(get_theme(THEME))
-        .build()?;
-
-    Ok(hl.highlight(&lines))
-}
-
 async fn handle_events(
     term: &mut Terminal<CrosstermBackend<Stdout>>,
-    client: Sender<AppEvent>,
-    mut events: EventAggregator<AppEvent>,
-    mut practice_opts: PracticeOptions,
+    mut app: Game<'_, PracticeOptions>,
+    text: &str,
 ) -> AsyncResult<Option<SessionResult>> {
-    let text = read_to_string(&practice_opts.file)?;
-    let styled_lines = format_and_style(&text, &practice_opts)?;
-
-    let username = practice_opts
-        .username
-        .take()
-        .unwrap_or_else(|| "you".into());
-    let mut main = PlayerState::new(username, &text);
-    let mut opponents = if practice_opts.ghost {
-        let mut ghost = initialize_ghost(&text, client.clone())?;
-        ghost.start().await?;
-        PlayerPool::new(&text).with_players(&["ghost"])
-    } else {
-        PlayerPool::new(&text)
-    };
-
+    let styled_lines = format_and_style(text, &app.opts.file, app.theme)?;
     let mut stats = SessionStats::default();
 
-    while let Some(event) = events.next().await {
+    while let Some(event) = app.events.next().await {
         let session_state =
-            handle_event(event, &mut main, &mut opponents, &mut stats)?;
+            handle_event(event, &mut app.main, &mut app.opponents, &mut stats)?;
 
         if let SessionState::End(end) = session_state {
             if let SessionEnd::Finished = &end {
-                update_record_state(&text, &main, &practice_opts)?;
+                update_record_state(text, &app.main, &app.opts)?;
                 return Ok(Some(generate_session_result(
                     stats,
-                    main,
-                    opponents,
-                    practice_opts,
+                    app.main,
+                    app.opponents,
+                    app.opts,
                 )));
             } else {
                 return Ok(None);
             }
         }
 
-        render(term, &main, &opponents, &stats, &styled_lines)?;
+        render(term, &app, &stats, &styled_lines)?;
     }
 
     unreachable!();
@@ -181,9 +122,8 @@ fn generate_session_result(
             ranking: None,
         }
     } else {
-        let ghost_progress = opponents.player("ghost").unwrap().get_progress();
-        let (spot, names): (usize, Vec<&str>) =
-            if ghost_progress == Progress::Finished {
+        let (spot, ranked): (usize, Vec<&str>) =
+            if opponents.player("ghost").unwrap().is_done() {
                 (1, vec!["ghost", main.name.as_ref()])
             } else {
                 (0, vec![main.name.as_ref(), "ghost"])
@@ -193,7 +133,7 @@ fn generate_session_result(
             stats,
             ranking: Some(Ranking {
                 spot,
-                names: names.iter().map(|&s| s.to_string()).collect(),
+                names: ranked.iter().map(|&s| s.to_string()).collect(),
             }),
         }
     }
@@ -230,9 +170,8 @@ fn handle_term(
         };
 
         if let Some(c) = c {
-            if let InputResult::Correct(Progress::Finished) =
-                main.process_input(c).unwrap()
-            {
+            main.process_input(c);
+            if main.is_done() {
                 return SessionState::End(SessionEnd::Finished);
             }
         }
@@ -241,21 +180,8 @@ fn handle_term(
     SessionState::Ongoing
 }
 
-fn handle_wpm_tick(stats: &mut SessionStats, main: &PlayerState) {
-    let recorder = &main.recorder;
-    let record = recorder.record();
-    let elapsed = recorder.elapsed();
-    let wpm = record.wpm_at(Duration::from_secs(4), elapsed);
-
-    stats.wpm_series.push((elapsed.as_secs_f64(), wpm));
-    stats.average_wpm = record.average_wpm(recorder.elapsed());
-    stats.top_wpm = f64::max(wpm, stats.top_wpm);
-    stats.mistake_count = record.count_wrong();
-    stats.precision = record.precision();
-}
-
 fn handle_ghost_input(input: InputResult, opponents: &mut PlayerPool) {
-    if let InputResult::Correct(_) = input {
+    if let InputResult::Correct = input {
         opponents.advance_player("ghost").unwrap();
     }
 }
@@ -288,96 +214,4 @@ fn update_record_state(
     }
 
     Ok(())
-}
-
-fn render(
-    term: &mut Terminal<CrosstermBackend<Stdout>>,
-    main: &PlayerState<'_>,
-    opponents: &PlayerPool<'_>,
-    stats: &SessionStats,
-    styled_lines: &[StyledLine],
-) -> AsyncResult<()> {
-    term.draw(|f| {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .margin(2)
-            .constraints(
-                [Constraint::Length(7), Constraint::Percentage(60)].as_ref(),
-            )
-            .split(f.size());
-
-        let wpm_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(
-                [Constraint::Percentage(80), Constraint::Percentage(20)]
-                    .as_ref(),
-            )
-            .split(chunks[0]);
-        render_dacttylo(f, wpm_chunks[0]);
-        render_wpm(f, wpm_chunks[1], stats);
-        render_text(f, chunks[1], main, opponents, styled_lines);
-    })?;
-
-    Ok(())
-}
-
-pub fn load_wpm_font() -> &'static FIGfont {
-    static FONT: OnceCell<FIGfont> = OnceCell::new();
-    FONT.get_or_init(|| {
-        let bytes = include_bytes!("figfonts/lcd.flf");
-        let s = std::str::from_utf8(bytes).unwrap();
-        FIGfont::from_content(s).unwrap()
-    })
-}
-
-pub fn load_title_font() -> &'static FIGfont {
-    static FONT: OnceCell<FIGfont> = OnceCell::new();
-    FONT.get_or_init(|| {
-        let bytes = include_bytes!("figfonts/slant.flf");
-        let s = std::str::from_utf8(bytes).unwrap();
-        FIGfont::from_content(s).unwrap()
-    })
-}
-
-fn render_wpm(
-    f: &mut Frame<CrosstermBackend<Stdout>>,
-    area: Rect,
-    stats: &SessionStats,
-) {
-    let wpm = stats.wpm_series.last().map_or(0.0, |(_, wpm)| *wpm);
-    let widget = WpmWidget::new(wpm as u32, load_wpm_font());
-    f.render_widget(widget, area);
-}
-
-fn render_text(
-    f: &mut Frame<CrosstermBackend<Stdout>>,
-    area: Rect,
-    main: &PlayerState<'_>,
-    opponents: &PlayerPool<'_>,
-    styled_lines: &[StyledLine],
-) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .style(Style::default().bg(Color::Reset).fg(Color::White));
-
-    let bg = get_theme(THEME).settings.background.unwrap();
-
-    f.render_widget(
-        DacttyloWidget::new(main, opponents, styled_lines)
-            .block(block)
-            .bg_color(Color::Rgb(bg.r, bg.g, bg.b)),
-        area,
-    );
-}
-
-fn render_dacttylo(f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .style(Style::default().bg(Color::Reset).fg(Color::White));
-
-    let font = load_title_font();
-    let figtext = FigTextWidget::new("dacttylo", font)
-        .align(Alignment::Center)
-        .block(block);
-    f.render_widget(figtext, area);
 }

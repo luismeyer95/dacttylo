@@ -1,6 +1,6 @@
 use libp2p::{floodsub::Topic, PeerId};
 
-use crate::{events::AppEvent, network::NetEvent};
+use crate::{events::AppEvent, network::P2PEvent};
 
 #[derive(Debug, Clone)]
 pub enum SessionEvent {
@@ -11,9 +11,9 @@ pub enum SessionEvent {
     },
 }
 
-impl From<NetEvent> for SessionEvent {
-    fn from(e: NetEvent) -> Self {
-        let NetEvent::TopicMessage {
+impl From<P2PEvent> for SessionEvent {
+    fn from(e: P2PEvent) -> Self {
+        let P2PEvent::TopicMessage {
             source,
             topics,
             data,

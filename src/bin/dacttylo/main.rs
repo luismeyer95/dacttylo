@@ -1,34 +1,12 @@
-// #![allow(unused)]
-
-use crossterm::event::{Event, KeyCode, KeyEvent};
-
-use dacttylo::app::state::PlayerPool;
-use dacttylo::app::widget::DacttyloWidget;
-use dacttylo::events::ticker;
-use dacttylo::events::ticker::TickerClient;
-use dacttylo::session;
-use dacttylo::utils::tui::{enter_tui_mode, leave_tui_mode};
-use dacttylo::utils::types::{Action, AsyncResult};
-use libp2p::{identity, PeerId};
-use rand::Rng;
-use std::io::Stdout;
-use std::time::Duration;
-// use tokio::io::{AsyncWrite, AsyncWriteExt};
-use tui::backend::CrosstermBackend;
-use tui::Terminal;
-
 use dacttylo::cli::Commands;
-use dacttylo::events::event_aggregator::EventAggregator;
-use dacttylo::{
-    self, aggregate,
-    events::AppEvent,
-    network::{self},
-    session::SessionClient,
-};
-use tokio_stream::StreamExt;
+use dacttylo::utils::types::AsyncResult;
 
-mod multi;
+mod app;
+mod common;
+// mod host;
+mod join;
 mod practice;
+mod protocol;
 mod report;
 
 #[tokio::main]
@@ -45,14 +23,13 @@ async fn main() -> AsyncResult<()> {
 async fn init_session() -> AsyncResult<()> {
     let cli = dacttylo::cli::parse();
 
-    // println!("{:?}", cli);
-    // return Ok(());
-
     match cli.command {
         Commands::Practice(practice_opts) => {
             practice::run_practice_session(practice_opts).await?;
         }
-        // Commands::Host { user, file } => {}
+        Commands::Host(host_opts) => {
+            // host::run_host_session(host_opts).await?;
+        }
         // Commands::Join { user, host } => {}
         _ => panic!("Command not supported yet"),
     };

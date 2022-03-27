@@ -7,7 +7,7 @@ use std::{collections::HashMap, error::Error};
 use dacttylo::{
     self,
     cli::*,
-    network::{self, NetEvent},
+    network::{self, P2PEvent},
     session::{SessionClient, SessionCommand, SessionData},
     utils::time::*,
 };
@@ -23,8 +23,12 @@ async fn main() {
     let cli = dacttylo::cli::parse();
 
     if let Err(e) = match cli.command.clone() {
-        Commands::Host { user, file } => handle_host(user, file).await,
-        Commands::Join { user, host } => handle_join(user, host).await,
+        Commands::Host(host_opts) => {
+            handle_host(host_opts.user, host_opts.file).await
+        }
+        Commands::Join(join_opts) => {
+            handle_join(join_opts.user, join_opts.host).await
+        }
         _ => panic!("Unexpected command"),
     } {
         eprintln!("Error: {}", e);
@@ -111,7 +115,7 @@ async fn handle_host(user: String, file: String) -> AsyncResult<()> {
 
                 match event {
                     Some(e) => {
-                        let NetEvent::TopicMessage {
+                        let P2PEvent::TopicMessage {
                             source, topics, data
                         } = e;
                         let (peer_id, cmd) = (source, bincode::deserialize::<SessionCommand>(&data)?);
@@ -121,7 +125,7 @@ async fn handle_host(user: String, file: String) -> AsyncResult<()> {
                             State::TakingRegistrations => {
                                 if let SessionCommand::Register { user } = cmd {
                                     println!("Registering user `{}`", user);
-                                    registered_users.insert(peer_id.to_base58(), user);
+                                    registered_users.entry(peer_id.to_base58()).or_insert(user);
                                 };
                             }
 
@@ -222,7 +226,7 @@ async fn handle_join(user: String, host: String) -> AsyncResult<()> {
 
                 match event {
                     Some(e) => {
-                        let NetEvent::TopicMessage {
+                        let P2PEvent::TopicMessage {
                             source, topics, data
                         } = e;
                         let (peer_id, cmd) = (source, bincode::deserialize::<SessionCommand>(&data)?);
