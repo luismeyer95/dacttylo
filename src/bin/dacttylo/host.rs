@@ -1,65 +1,35 @@
 use crate::{
     app::Game,
-    common::{
-        self, format_and_style, handle_wpm_tick, render, spawn_ticker,
-        SessionEnd, SessionState,
-    },
-    protocol::{ProtocolClient, ProtocolCommand},
-    report::{display_session_report, Ranking, SessionResult},
+    common::*,
+    protocol::ProtocolCommand,
+    report::{display_session_report, SessionResult},
 };
+use bincode::{deserialize, serialize};
 use chrono::{DateTime, Utc};
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use dacttylo::{
     aggregate,
-    app::{
-        state::{PlayerPool, PlayerState},
-        widget::DacttyloWidget,
-        InputResult, Progress,
-    },
-    cli::{PracticeOptions, Save},
+    app::state::{PlayerPool, PlayerState},
     events::{app_event, AppEvent, EventAggregator},
-    ghost::Ghost,
-    highlighting::{Highlighter, SyntectHighlighter},
-    network::{self, P2PEvent},
-    record::manager::RecordManager,
-    session::{event::SessionEvent, SessionClient, SessionCommand},
+    network::{self},
+    session::{self, event::SessionEvent, SessionClient, SessionCommand},
     stats::SessionStats,
     utils::{
-        self,
-        syntect::syntect_load_defaults,
         time::{datetime_in, wake_up},
         tui::{enter_tui_mode, leave_tui_mode},
-        types::StyledLine,
     },
-    widgets::{figtext::FigTextWidget, wpm::WpmWidget},
 };
 use dacttylo::{cli::HostOptions, utils::types::AsyncResult};
-use figlet_rs::FIGfont;
 use futures::Stream;
 use libp2p::{identity, PeerId};
-use once_cell::sync::OnceCell;
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    fs::read_to_string,
-    io::Stdout,
-    time::Duration,
-};
-use syntect::highlighting::Theme;
+use std::{collections::HashMap, io::Stdout};
 use tokio::sync::mpsc::Sender;
 use tokio::{
     fs,
     io::{self, AsyncBufReadExt},
 };
 use tokio_stream::StreamExt;
-use tui::{
-    backend::{Backend, CrosstermBackend},
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    symbols,
-    text::{Span, StyledGrapheme},
-    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType},
-    Frame, Terminal,
-};
+use tui::{backend::CrosstermBackend, Terminal};
 
 const THEME: &str = "Solarized (dark)";
 
@@ -68,10 +38,11 @@ pub async fn run_host_session(host_opts: HostOptions) -> AsyncResult<()> {
 
     let text = fs::read_to_string(&host_opts.file).await?;
 
-    let (peer_id, mut session_client, mut session_events) =
+    let (peer_id, mut session_client, session_events) =
         connect_to_network().await?;
+    tokio::pin!(session_events);
 
-    let registered_users = take_registrations(
+    let mut registered_users = take_registrations(
         peer_id,
         &mut session_client,
         &mut session_events,
@@ -81,7 +52,6 @@ pub async fn run_host_session(host_opts: HostOptions) -> AsyncResult<()> {
     .await?;
 
     //////////////////
-    let protocol_client = ProtocolClient::new(session_client);
 
     let game =
         init_game_state(&text, &registered_users, session_events, host_opts)
@@ -90,8 +60,8 @@ pub async fn run_host_session(host_opts: HostOptions) -> AsyncResult<()> {
     let mut term = enter_tui_mode(std::io::stdout())?;
     let session_result = handle_events(
         &mut term,
-        protocol_client,
-        &registered_users,
+        session_client,
+        &mut registered_users,
         game,
         &text,
     )
@@ -112,7 +82,7 @@ pub async fn run_host_session(host_opts: HostOptions) -> AsyncResult<()> {
 pub async fn init_game_state<'t>(
     text: &'t str,
     registered_users: &HashMap<String, String>,
-    session_events: impl Stream<Item = P2PEvent>,
+    session_events: impl Stream<Item = SessionEvent> + 'static,
     host_opts: HostOptions,
 ) -> AsyncResult<Game<'t, HostOptions>> {
     let (client, events) = configure_event_stream(session_events);
@@ -128,8 +98,8 @@ pub async fn init_game_state<'t>(
 
 async fn handle_events(
     term: &mut Terminal<CrosstermBackend<Stdout>>,
-    mut protocol_client: ProtocolClient,
-    registered_users: &HashMap<String, String>,
+    mut session_client: SessionClient,
+    registered_users: &mut HashMap<String, String>,
     mut game: Game<'_, HostOptions>,
     text: &str,
 ) -> AsyncResult<Option<SessionResult>> {
@@ -139,7 +109,7 @@ async fn handle_events(
     while let Some(event) = game.events.next().await {
         let session_state = handle_event(
             event,
-            &mut protocol_client,
+            &mut session_client,
             registered_users,
             &mut game,
             &mut stats,
@@ -162,18 +132,18 @@ async fn handle_events(
 
 async fn handle_event(
     event: AppEvent,
-    protocol_client: &mut ProtocolClient,
-    registered_users: &HashMap<String, String>,
+    session_client: &mut SessionClient,
+    registered_users: &mut HashMap<String, String>,
     game: &mut Game<'_, HostOptions>,
     stats: &mut SessionStats,
 ) -> AsyncResult<SessionState> {
     match event {
         AppEvent::Term(e) => {
-            return Ok(handle_term(e?, protocol_client, &mut game).await);
+            return handle_term(e?, session_client, game).await;
         }
         AppEvent::WpmTick => handle_wpm_tick(stats, &game.main),
         AppEvent::Session(e) => {
-            handle_session_event(e, registered_users, game).ok();
+            return handle_session_event(e, registered_users, game);
         }
         _ => (),
     };
@@ -183,44 +153,52 @@ async fn handle_event(
 
 fn handle_session_event(
     event: SessionEvent,
-    registered_users: &HashMap<String, String>,
+    registered_users: &mut HashMap<String, String>,
     game: &mut Game<HostOptions>,
-) -> AsyncResult<()> {
-    let SessionEvent::TopicMessage {
-        source,
-        topics,
-        data,
-    } = event;
+) -> AsyncResult<SessionState> {
+    let SessionEvent { peer_id, cmd } = event;
 
-    let (peer_id, cmd) =
-        (source, bincode::deserialize::<SessionCommand>(&data)?);
     if let SessionCommand::Push(payload) = cmd {
-        let username = registered_users
-            .get(&peer_id.to_base58())
-            .ok_or("session event origin user not found")?;
+        let cmd = deserialize::<ProtocolCommand>(&payload)?;
 
-        let input_ch = std::str::from_utf8(&payload)?
-            .chars()
-            .nth(0)
-            .ok_or("empty payload")?;
+        match cmd {
+            ProtocolCommand::Input(ch) => {
+                let username = registered_users
+                    .get(&peer_id)
+                    .ok_or("session event origin user not found")?;
 
-        game.opponents.process_input(username, input_ch)?;
+                let input_ch = std::str::from_utf8(&payload)?
+                    .chars()
+                    .nth(0)
+                    .ok_or("empty payload")?;
+
+                game.opponents.process_input(username, input_ch)?;
+
+                if game.main.is_done() && game.opponents.are_done() {
+                    return Ok(SessionState::End(SessionEnd::Finished));
+                }
+            }
+            ProtocolCommand::Forfeit => {
+                registered_users.remove(&peer_id);
+            }
+        }
     }
 
-    Ok(())
+    Ok(SessionState::Ongoing)
 }
 
 async fn handle_term(
     term_event: crossterm::event::Event,
-    protocol_client: &mut ProtocolClient,
+    session_client: &mut SessionClient,
     game: &mut Game<'_, HostOptions>,
-) -> SessionState {
+) -> AsyncResult<SessionState> {
     if let Event::Key(event) = term_event {
         let KeyEvent { code, .. } = event;
         let c = match code {
             KeyCode::Esc => {
-                protocol_client.publish(ProtocolCommand::Forfeit).await;
-                return SessionState::End(SessionEnd::Quit);
+                let serial = serialize(&ProtocolCommand::Forfeit)?;
+                session_client.publish(SessionCommand::Push(serial)).await;
+                return Ok(SessionState::End(SessionEnd::Quit));
             }
             KeyCode::Char(c) => Some(c),
             KeyCode::Enter => Some('\n'),
@@ -229,26 +207,29 @@ async fn handle_term(
         };
 
         if let Some(c) = c {
-            protocol_client.publish(ProtocolCommand::Input(c)).await;
+            let serial = serialize(&ProtocolCommand::Input(c))?;
+            session_client.publish(SessionCommand::Push(serial)).await;
+
             game.main.process_input(c);
 
             if game.main.is_done() && game.opponents.are_done() {
-                return SessionState::End(SessionEnd::Finished);
+                return Ok(SessionState::End(SessionEnd::Finished));
             }
         }
     }
 
-    SessionState::Ongoing
+    Ok(SessionState::Ongoing)
 }
 
 fn generate_session_result(
     stats: SessionStats,
     game: &Game<'_, HostOptions>,
 ) -> SessionResult {
+    todo!()
 }
 
 pub fn configure_event_stream(
-    session_stream: impl Stream<Item = P2PEvent>,
+    session_stream: impl Stream<Item = SessionEvent> + 'static,
 ) -> (Sender<AppEvent>, EventAggregator<AppEvent>) {
     let (client, stream) = app_event::stream();
     spawn_ticker(client.clone());
@@ -263,7 +244,7 @@ pub fn configure_event_stream(
 async fn take_registrations(
     peer_id: PeerId,
     client: &mut SessionClient,
-    events: &mut (impl Stream<Item = P2PEvent> + Unpin),
+    events: &mut (impl Stream<Item = SessionEvent> + Unpin),
     text: &str,
     host_opts: &HostOptions,
 ) -> AsyncResult<HashMap<String, String>> {
@@ -284,13 +265,12 @@ async fn take_registrations(
             // handle session events
             event = events.next() => {
                 let event = event.ok_or("event stream closed unexpectedly")?;
-                let P2PEvent::TopicMessage {
-                    source, data, ..
+                let SessionEvent {
+                    peer_id, cmd
                 } = event;
-                let (peer_id, cmd) = (source, bincode::deserialize::<SessionCommand>(&data)?);
 
                 if let SessionCommand::Register { user } = cmd {
-                    registered_users.entry(peer_id.to_base58()).or_insert_with(|| {
+                    registered_users.entry(peer_id).or_insert_with(|| {
                         println!("Registering user `{}`", user);
                         user
                     });
@@ -317,8 +297,11 @@ async fn lock_registrations(
     Ok(date)
 }
 
-async fn connect_to_network(
-) -> AsyncResult<(PeerId, SessionClient, impl Stream<Item = P2PEvent>)> {
+async fn connect_to_network() -> AsyncResult<(
+    PeerId,
+    SessionClient,
+    impl Stream<Item = SessionEvent> + 'static,
+)> {
     let id_keys = identity::Keypair::generate_ed25519();
     let peer_id = PeerId::from(id_keys.public());
 
@@ -326,9 +309,10 @@ async fn connect_to_network(
 
     let (online_client, online_events, task) =
         network::new(id_keys.clone()).await?;
-    let online_client = SessionClient::new(online_client);
+    let (session_client, session_events) =
+        session::new(online_client, online_events);
 
     tokio::spawn(task.run());
 
-    Ok((peer_id, online_client, online_events))
+    Ok((peer_id, session_client, session_events))
 }

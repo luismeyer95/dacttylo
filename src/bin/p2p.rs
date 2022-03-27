@@ -1,5 +1,6 @@
 // #![allow(unused)]
 
+use bincode::deserialize;
 use chrono::{DateTime, Utc};
 use libp2p::{identity, PeerId};
 use std::{collections::HashMap, error::Error};
@@ -118,7 +119,7 @@ async fn handle_host(user: String, file: String) -> AsyncResult<()> {
                         let P2PEvent::TopicMessage {
                             source, topics, data
                         } = e;
-                        let (peer_id, cmd) = (source, bincode::deserialize::<SessionCommand>(&data)?);
+                        let (peer_id, cmd) = (source, deserialize::<SessionCommand>(&data)?);
 
                         match &state {
                             // process registrations if user hasn't locked session

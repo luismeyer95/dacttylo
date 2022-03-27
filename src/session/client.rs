@@ -1,9 +1,7 @@
 use std::{error::Error, time::Duration};
 
-use libp2p::{
-    floodsub::Topic,
-    kad::{record::Key, PeerRecord, Record},
-};
+use bincode::deserialize;
+use libp2p::{floodsub::Topic, kad::record::Key};
 use rand::{distributions::Alphanumeric, Rng};
 
 use crate::network::P2PClient;
@@ -49,7 +47,7 @@ impl SessionClient {
             .records
             .iter()
             .filter_map(|peer_record| {
-                bincode::deserialize(&peer_record.record.value).ok()
+                deserialize(&peer_record.record.value).ok()
             })
             .collect();
 

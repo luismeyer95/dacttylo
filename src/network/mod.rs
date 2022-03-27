@@ -83,7 +83,8 @@ pub async fn generate_swarm(
 /// - The network task driving the network itself.
 pub async fn new(
     id_keys: identity::Keypair,
-) -> AsyncResult<(P2PClient, impl Stream<Item = P2PEvent>, EventLoop)> {
+) -> AsyncResult<(P2PClient, impl Stream<Item = P2PEvent> + 'static, EventLoop)>
+{
     let peer_id = PeerId::from(id_keys.public());
 
     // Create a keypair for authenticated encryption of the transport
