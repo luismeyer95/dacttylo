@@ -2,6 +2,7 @@ use super::input::InputResultRecord;
 use crate::app::InputResult;
 use std::time::{Duration, Instant};
 
+#[derive(Debug, Clone)]
 pub struct InputResultRecorder {
     start: Instant,
     record: InputResultRecord,

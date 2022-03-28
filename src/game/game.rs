@@ -7,6 +7,7 @@ use crate::{
     app::state::{PlayerPool, PlayerState},
     cli::base_opts::BaseOpts,
     events::{app_event, AppEvent, EventAggregator},
+    stats::GameStats,
     utils::types::AsyncResult,
 };
 
@@ -15,6 +16,7 @@ const THEME: &str = "Solarized (dark)";
 pub struct Game<'t, O> {
     pub main: PlayerState<'t>,
     pub opponents: PlayerPool<'t>,
+    pub stats: GameStats,
 
     pub client: Sender<AppEvent>,
     pub events: EventAggregator<AppEvent>,
@@ -29,7 +31,7 @@ where
 {
     pub fn new(
         text: &'t str,
-        opponent_names: &[&str],
+        opponents: &[&str],
         opts: O,
     ) -> AsyncResult<Game<'t, O>> {
         let (client, events) = Self::configure_event_stream();
@@ -37,11 +39,13 @@ where
         let username = opts.get_username().unwrap_or("you");
 
         let main = PlayerState::new(username.to_owned(), text);
-        let opponents = PlayerPool::new(text).with_players(opponent_names);
+        let opponents = PlayerPool::new(text).with_players(opponents);
+        let stats = GameStats::default();
 
         Ok(Game {
             main,
             opponents,
+            stats,
             client,
             events,
             opts,

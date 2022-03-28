@@ -2,7 +2,7 @@ use std::io::Stdout;
 
 use crossterm::event::Event;
 use dacttylo::{
-    stats::SessionStats, utils::types::AsyncResult,
+    stats::GameStats, utils::types::AsyncResult,
     widgets::figtext::FigTextWidget,
 };
 use figlet_rs::FIGfont;
@@ -20,7 +20,7 @@ use tui::{
 
 #[derive(Debug, Clone)]
 pub struct SessionResult {
-    pub stats: SessionStats,
+    pub stats: GameStats,
     pub ranking: Option<Ranking>,
 }
 #[derive(Debug, Clone)]
@@ -114,11 +114,7 @@ fn render_data<B: Backend>(
     }
 }
 
-fn render_stats<B: Backend>(
-    f: &mut Frame<B>,
-    area: Rect,
-    stats: &SessionStats,
-) {
+fn render_stats<B: Backend>(f: &mut Frame<B>, area: Rect, stats: &GameStats) {
     let stats_fmt = format!("{}", stats);
 
     let block = Block::default()
@@ -187,7 +183,7 @@ fn render_ranking<B: Backend>(
 fn render_chart(
     f: &mut Frame<CrosstermBackend<Stdout>>,
     area: Rect,
-    stats: &SessionStats,
+    stats: &GameStats,
 ) {
     let data = stats.wpm_series.as_slice();
 

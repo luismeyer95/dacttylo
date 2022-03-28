@@ -10,7 +10,7 @@ use dacttylo::{
     game::game::Game,
     ghost::Ghost,
     record::manager::RecordManager,
-    stats::SessionStats,
+    stats::GameStats,
     utils::tui::{enter_tui_mode, leave_tui_mode},
 };
 use std::{fs::read_to_string, io::Stdout};
@@ -49,7 +49,7 @@ async fn handle_events(
     text: &str,
 ) -> AsyncResult<Option<SessionResult>> {
     let styled_lines = format_and_style(text, &game.opts.file, game.theme)?;
-    let mut stats = SessionStats::default();
+    let mut stats = GameStats::default();
 
     if game.opts.ghost {
         let mut ghost = initialize_ghost(text, game.client.clone())?;
@@ -73,7 +73,7 @@ async fn handle_events(
             }
         }
 
-        render(term, &game, &stats, &styled_lines)?;
+        render(term, &game, &styled_lines)?;
     }
 
     unreachable!();
@@ -82,12 +82,12 @@ async fn handle_events(
 fn handle_event<'t, O>(
     event: AppEvent,
     game: &mut Game<'t, O>,
-    stats: &mut SessionStats,
+    stats: &mut GameStats,
 ) -> AsyncResult<SessionState> {
     match event {
         AppEvent::Term(e) => return Ok(handle_term(e?, &mut game.main)),
         AppEvent::GhostInput(c) => handle_ghost_input(c, &mut game.opponents),
-        AppEvent::WpmTick => handle_wpm_tick(stats, &mut game.main),
+        AppEvent::WpmTick => handle_wpm_tick(stats, &game.main),
         _ => (),
     };
 
@@ -136,7 +136,7 @@ pub fn initialize_ghost(
 }
 
 fn generate_session_result(
-    stats: SessionStats,
+    stats: GameStats,
     main: PlayerState,
     opponents: PlayerPool,
     practice_opts: PracticeOptions,

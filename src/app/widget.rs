@@ -48,19 +48,21 @@ impl<'txt, 'ln> DacttyloWidget<'txt, 'ln> {
         self
     }
 
-    fn get_main_style(&self) -> (TextCoord, Style) {
-        let player_coords = self.main.get_cursor_coord();
+    fn get_main_style(&self) -> Option<(TextCoord, Style)> {
+        if let Some(player_coords) = self.main.get_cursor_coord() {
+            let style = Style::default();
+            let neutral = style.bg(Color::White).fg(Color::Black);
+            let wrong = style.bg(Color::Red).fg(Color::White);
 
-        let style = Style::default();
-        let neutral = style.bg(Color::White).fg(Color::Black);
-        let wrong = style.bg(Color::Red).fg(Color::White);
+            let style = match self.main.last_input() {
+                Some(InputResult::Wrong(_)) => wrong,
+                _ => neutral,
+            };
 
-        let style = match self.main.last_input() {
-            Some(InputResult::Wrong(_)) => wrong,
-            _ => neutral,
-        };
-
-        (player_coords, style)
+            Some((player_coords, style))
+        } else {
+            None
+        }
     }
 
     fn get_main_error_styles(&self) -> HashMap<TextCoord, Style> {
@@ -98,21 +100,25 @@ impl<'txt, 'ln> DacttyloWidget<'txt, 'ln> {
 
 impl<'txt, 'ln> Widget for DacttyloWidget<'txt, 'ln> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let main_coord = self.main.get_cursor_coord();
-
         let mut styles = self.get_opponent_styles();
         let error_styles = self.get_main_error_styles();
-        let main_style = self.get_main_style();
-
         styles.extend(error_styles);
-        styles.insert(main_style.0, main_style.1);
+
+        let main_style = self.get_main_style();
+        if let Some((coord, style)) = &main_style {
+            styles.insert(coord.clone(), *style);
+        }
 
         let styled_lines =
             Self::apply_cursors(styles, self.highlighted_content.to_owned());
 
+        let current_ln = main_style
+            .map(|(coord, _)| coord.ln)
+            .unwrap_or(styled_lines.len() - 1);
+
         TextView::from_styled_content(&styled_lines)
             .block(self.block)
-            .anchor(Anchor::Center(main_coord.ln))
+            .anchor(Anchor::Center(current_ln))
             .bg_color(self.bg_color)
             .render(area, buf);
     }

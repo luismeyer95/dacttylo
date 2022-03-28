@@ -17,6 +17,7 @@ pub enum InputResult {
     Wrong(char),
 }
 
+#[derive(Debug, Clone)]
 pub struct PlayerState<'txt> {
     pub name: String,
     pub recorder: InputResultRecorder,
@@ -61,15 +62,15 @@ impl<'txt> PlayerState<'txt> {
         Some(input_result)
     }
 
-    fn skip_trailing_wp(&mut self) {
-        let it = self.text.chars().skip(self.pos);
-        for ch in it {
-            if !ch.is_whitespace() || ch == '\n' {
-                break;
-            }
-            self.pos += 1;
-        }
-    }
+    // fn skip_trailing_wp(&mut self) {
+    //     let it = self.text.chars().skip(self.pos);
+    //     for ch in it {
+    //         if !ch.is_whitespace() || ch == '\n' {
+    //             break;
+    //         }
+    //         self.pos += 1;
+    //     }
+    // }
 
     pub fn get_error_coords(&self) -> Vec<TextCoord> {
         let text_lines = self.text.split_inclusive('\n').collect::<Vec<_>>();
@@ -79,11 +80,11 @@ impl<'txt> PlayerState<'txt> {
         coords.into_iter().map_into::<TextCoord>().collect()
     }
 
-    pub fn get_cursor_coord(&self) -> TextCoord {
+    pub fn get_cursor_coord(&self) -> Option<TextCoord> {
         let text_lines = self.text.split_inclusive('\n').collect::<Vec<_>>();
-        let coords_lst = text_to_line_index([self.pos], &text_lines).unwrap();
+        let coords_lst = text_to_line_index([self.pos], &text_lines).ok()?;
 
-        coords_lst[0].into()
+        Some(coords_lst[0].into())
     }
 
     pub fn is_done(&self) -> bool {
@@ -112,17 +113,21 @@ impl<'txt> PlayerState<'txt> {
             .record()
             .inputs
             .last()
-            .map(|(elapsed, input)| input.clone())
+            .map(|(_, input)| *input)
     }
 
     pub fn text(&self) -> &str {
         self.text
     }
+
+    pub fn name(&self) -> &String {
+        &self.name
+    }
 }
 
+#[derive(Debug, Clone)]
 pub struct PlayerPool<'txt> {
     text: &'txt str,
-
     players: HashMap<String, PlayerState<'txt>>,
 }
 
@@ -178,6 +183,10 @@ impl<'txt> PlayerPool<'txt> {
 
     pub fn players(&self) -> &HashMap<String, PlayerState<'txt>> {
         &self.players
+    }
+
+    pub fn remove(&mut self, username: &str) -> Option<PlayerState> {
+        self.players.remove(username)
     }
 
     pub fn text(&self) -> &'txt str {
