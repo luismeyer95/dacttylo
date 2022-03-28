@@ -5,60 +5,36 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "lldb",
-            "request": "attach",
-            "name": "Attach",
-            "program": "${workspaceFolder}/target/debug/dacttylo"
-        },
-        {
+            "name": "(OSX) Launch",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug editor",
-            "cargo": {
-                "args": ["build", "--bin=dacttylo", "--package=dacttylo"],
-                "filter": {
-                    "name": "dacttylo",
-                    "kind": "bin"
-                }
-            },
-            "args": ["src/line_stylizer.rs"],
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
-            "internalConsoleOptions": "openOnFirstSessionStart"
+            "program": "${workspaceRoot}/target/debug/dacttylo",
+            "args": ["join", "luis", "-u", "eric"],
+            "cwd": "${workspaceRoot}",
+            "internalConsoleOptions": "neverOpen",
+            "console": "integratedTerminal"
         },
+
         {
+            "name": "P2P Demo Join",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'dacttylo'",
-            "cargo": {
-                "args": ["build", "--bin=events_test", "--package=dacttylo"],
-                "filter": {
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
-            "internalConsoleOptions": "openOnFirstSessionStart"
+            "program": "${workspaceRoot}/target/debug/p2p",
+            "args": ["join", "luis", "-u", "eric"],
+            "cwd": "${workspaceRoot}",
+            "internalConsoleOptions": "neverOpen",
+            "console": "integratedTerminal"
         },
+
         {
+            "name": "P2P Demo Host",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'dacttylo'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=dacttylo",
-                    "--package=dacttylo"
-                ],
-                "filter": {
-                    "name": "dacttylo",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
+            "program": "${workspaceRoot}/target/debug/p2p",
+            "args": ["host", "-u", "luis", "-f", "LICENSE"],
+            "cwd": "${workspaceRoot}",
+            "internalConsoleOptions": "neverOpen",
+            "console": "integratedTerminal"
         }
     ]
 }
