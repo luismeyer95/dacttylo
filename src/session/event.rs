@@ -4,8 +4,8 @@ use bincode::deserialize;
 
 #[derive(Debug, Clone)]
 pub struct SessionEvent {
-    peer_id: String,
-    cmd: SessionCommand,
+    pub peer_id: String,
+    pub cmd: SessionCommand,
 }
 
 impl From<P2PEvent> for SessionEvent {

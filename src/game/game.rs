@@ -1,0 +1,68 @@
+use std::time::Duration;
+
+use tokio::sync::mpsc::Sender;
+
+use crate::{
+    aggregate,
+    app::state::{PlayerPool, PlayerState},
+    cli::base_opts::BaseOpts,
+    events::{app_event, AppEvent, EventAggregator},
+    utils::types::AsyncResult,
+};
+
+const THEME: &str = "Solarized (dark)";
+
+pub struct Game<'t, O> {
+    pub main: PlayerState<'t>,
+    pub opponents: PlayerPool<'t>,
+
+    pub client: Sender<AppEvent>,
+    pub events: EventAggregator<AppEvent>,
+    pub opts: O,
+
+    pub theme: &'static str,
+}
+
+impl<'t, O> Game<'t, O>
+where
+    O: BaseOpts,
+{
+    pub fn new(
+        text: &'t str,
+        opponent_names: &[&str],
+        opts: O,
+    ) -> AsyncResult<Game<'t, O>> {
+        let (client, events) = Self::configure_event_stream();
+
+        let username = opts.get_username().unwrap_or("you");
+
+        let main = PlayerState::new(username.to_owned(), text);
+        let opponents = PlayerPool::new(text).with_players(opponent_names);
+
+        Ok(Game {
+            main,
+            opponents,
+            client,
+            events,
+            opts,
+            theme: THEME,
+        })
+    }
+
+    fn configure_event_stream() -> (Sender<AppEvent>, EventAggregator<AppEvent>)
+    {
+        let (client, stream) = app_event::stream();
+        let task_client = client.clone();
+        tokio::spawn(async move {
+            loop {
+                if task_client.send(AppEvent::WpmTick).await.is_err() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        });
+
+        let term_io_stream = crossterm::event::EventStream::new();
+        (client, aggregate!([stream, term_io_stream] as AppEvent))
+    }
+}

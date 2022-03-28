@@ -25,10 +25,10 @@ async fn main() {
 
     if let Err(e) = match cli.command.clone() {
         Commands::Host(host_opts) => {
-            handle_host(host_opts.user, host_opts.file).await
+            handle_host(host_opts.username, host_opts.file).await
         }
         Commands::Join(join_opts) => {
-            handle_join(join_opts.user, join_opts.host).await
+            handle_join(join_opts.username, join_opts.host).await
         }
         _ => panic!("Unexpected command"),
     } {

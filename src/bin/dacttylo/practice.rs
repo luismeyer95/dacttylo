@@ -1,19 +1,19 @@
-use crate::{app::Game, common::*, report::*, AsyncResult};
+use crate::{common::*, report::*, AsyncResult};
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use dacttylo::{
-    aggregate,
     app::{
         state::{PlayerPool, PlayerState},
         InputResult,
     },
     cli::{PracticeOptions, Save},
-    events::{app_event, AppEvent, EventAggregator},
+    events::AppEvent,
+    game::game::Game,
     ghost::Ghost,
     record::manager::RecordManager,
     stats::SessionStats,
     utils::tui::{enter_tui_mode, leave_tui_mode},
 };
-use std::{fs::read_to_string, io::Stdout, time::Duration};
+use std::{fs::read_to_string, io::Stdout};
 use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
 use tui::{backend::CrosstermBackend, Terminal};
@@ -22,7 +22,11 @@ pub async fn run_practice_session(
     practice_opts: PracticeOptions,
 ) -> AsyncResult<()> {
     let text = read_to_string(&practice_opts.file)?;
-    let game = init_game_state(&text, practice_opts).await?;
+    let game = Game::new(
+        &text,
+        if practice_opts.ghost { &["ghost"] } else { &[] },
+        practice_opts,
+    )?;
 
     let mut term = enter_tui_mode(std::io::stdout())?;
     let session_result = handle_events(&mut term, game, &text).await;
@@ -39,116 +43,51 @@ pub async fn run_practice_session(
     result
 }
 
-pub async fn init_game_state(
-    text: &str,
-    practice_opts: PracticeOptions,
-) -> AsyncResult<Game<'_, PracticeOptions>> {
-    let (client, events) = configure_event_stream();
-
-    let username = practice_opts.username.as_deref().unwrap_or("you");
-
-    let main = PlayerState::new(username.to_string(), text);
-    let opponents = if practice_opts.ghost {
-        let mut ghost = initialize_ghost(text, client.clone())?;
-        ghost.start().await?;
-        PlayerPool::new(text).with_players(&["ghost"])
-    } else {
-        PlayerPool::new(text)
-    };
-
-    Ok(Game::from(main, opponents, client, events, practice_opts))
-}
-
-pub fn configure_event_stream() -> (Sender<AppEvent>, EventAggregator<AppEvent>)
-{
-    let (client, stream) = app_event::stream();
-    spawn_ticker(client.clone());
-
-    let term_io_stream = crossterm::event::EventStream::new();
-    (client, aggregate!([stream, term_io_stream] as AppEvent))
-}
-
-pub fn initialize_ghost(
-    text: &str,
-    client: Sender<AppEvent>,
-) -> AsyncResult<Ghost> {
-    let input_record = RecordManager::mount_dir("records")?
-        .load_from_contents(text)
-        .map_err(|_| "no ghost record found for this file")?;
-    Ok(Ghost::new(input_record, client))
-}
-
 async fn handle_events(
     term: &mut Terminal<CrosstermBackend<Stdout>>,
-    mut app: Game<'_, PracticeOptions>,
+    mut game: Game<'_, PracticeOptions>,
     text: &str,
 ) -> AsyncResult<Option<SessionResult>> {
-    let styled_lines = format_and_style(text, &app.opts.file, app.theme)?;
+    let styled_lines = format_and_style(text, &game.opts.file, game.theme)?;
     let mut stats = SessionStats::default();
 
-    while let Some(event) = app.events.next().await {
-        let session_state =
-            handle_event(event, &mut app.main, &mut app.opponents, &mut stats)?;
+    if game.opts.ghost {
+        let mut ghost = initialize_ghost(text, game.client.clone())?;
+        ghost.start().await?;
+    }
+
+    while let Some(event) = game.events.next().await {
+        let session_state = handle_event(event, &mut game, &mut stats)?;
 
         if let SessionState::End(end) = session_state {
             if let SessionEnd::Finished = &end {
-                update_record_state(text, &app.main, &app.opts)?;
+                update_record_state(text, &game.main, &game.opts)?;
                 return Ok(Some(generate_session_result(
                     stats,
-                    app.main,
-                    app.opponents,
-                    app.opts,
+                    game.main,
+                    game.opponents,
+                    game.opts,
                 )));
             } else {
                 return Ok(None);
             }
         }
 
-        render(term, &app, &stats, &styled_lines)?;
+        render(term, &game, &stats, &styled_lines)?;
     }
 
     unreachable!();
 }
 
-fn generate_session_result(
-    stats: SessionStats,
-    main: PlayerState,
-    opponents: PlayerPool,
-    practice_opts: PracticeOptions,
-) -> SessionResult {
-    if !practice_opts.ghost {
-        SessionResult {
-            stats,
-            ranking: None,
-        }
-    } else {
-        let (spot, ranked): (usize, Vec<&str>) =
-            if opponents.player("ghost").unwrap().is_done() {
-                (1, vec!["ghost", main.name.as_ref()])
-            } else {
-                (0, vec![main.name.as_ref(), "ghost"])
-            };
-
-        SessionResult {
-            stats,
-            ranking: Some(Ranking {
-                spot,
-                names: ranked.iter().map(|&s| s.to_string()).collect(),
-            }),
-        }
-    }
-}
-
-fn handle_event(
+fn handle_event<'t, O>(
     event: AppEvent,
-    main: &mut PlayerState,
-    opponents: &mut PlayerPool,
+    game: &mut Game<'t, O>,
     stats: &mut SessionStats,
 ) -> AsyncResult<SessionState> {
     match event {
-        AppEvent::Term(e) => return Ok(handle_term(e?, main)),
-        AppEvent::GhostInput(c) => handle_ghost_input(c, opponents),
-        AppEvent::WpmTick => handle_wpm_tick(stats, main),
+        AppEvent::Term(e) => return Ok(handle_term(e?, &mut game.main)),
+        AppEvent::GhostInput(c) => handle_ghost_input(c, &mut game.opponents),
+        AppEvent::WpmTick => handle_wpm_tick(stats, &mut game.main),
         _ => (),
     };
 
@@ -183,6 +122,45 @@ fn handle_term(
 fn handle_ghost_input(input: InputResult, opponents: &mut PlayerPool) {
     if let InputResult::Correct = input {
         opponents.advance_player("ghost").unwrap();
+    }
+}
+
+pub fn initialize_ghost(
+    text: &str,
+    client: Sender<AppEvent>,
+) -> AsyncResult<Ghost> {
+    let input_record = RecordManager::mount_dir("records")?
+        .load_from_contents(text)
+        .map_err(|_| "no ghost record found for this file")?;
+    Ok(Ghost::new(input_record, client))
+}
+
+fn generate_session_result(
+    stats: SessionStats,
+    main: PlayerState,
+    opponents: PlayerPool,
+    practice_opts: PracticeOptions,
+) -> SessionResult {
+    if !practice_opts.ghost {
+        SessionResult {
+            stats,
+            ranking: None,
+        }
+    } else {
+        let (spot, ranked): (usize, Vec<&str>) =
+            if opponents.player("ghost").unwrap().is_done() {
+                (1, vec!["ghost", main.name.as_ref()])
+            } else {
+                (0, vec![main.name.as_ref(), "ghost"])
+            };
+
+        SessionResult {
+            stats,
+            ranking: Some(Ranking {
+                spot,
+                names: ranked.iter().map(|&s| s.to_string()).collect(),
+            }),
+        }
     }
 }
 

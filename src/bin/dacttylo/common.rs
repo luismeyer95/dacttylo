@@ -1,9 +1,11 @@
 use dacttylo::{
+    aggregate,
     app::{
         state::{PlayerPool, PlayerState},
         widget::DacttyloWidget,
     },
-    events::AppEvent,
+    events::{app_event, AppEvent, EventAggregator},
+    game::game::Game,
     highlighting::{Highlighter, SyntectHighlighter},
     stats::SessionStats,
     utils::{
@@ -25,8 +27,6 @@ use tui::{
     widgets::{Block, Borders},
     Frame, Terminal,
 };
-
-use crate::app::Game;
 
 pub enum SessionState {
     Ongoing,
@@ -60,6 +60,15 @@ pub fn handle_wpm_tick(stats: &mut SessionStats, main: &PlayerState) {
     stats.top_wpm = f64::max(wpm, stats.top_wpm);
     stats.mistake_count = record.count_wrong();
     stats.precision = record.precision();
+}
+
+pub fn configure_event_stream() -> (Sender<AppEvent>, EventAggregator<AppEvent>)
+{
+    let (client, stream) = app_event::stream();
+    spawn_ticker(client.clone());
+
+    let term_io_stream = crossterm::event::EventStream::new();
+    (client, aggregate!([stream, term_io_stream] as AppEvent))
 }
 
 pub fn get_theme(theme: &str) -> &'static Theme {

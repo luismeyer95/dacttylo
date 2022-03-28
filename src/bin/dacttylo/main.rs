@@ -3,7 +3,7 @@ use dacttylo::utils::types::AsyncResult;
 
 mod app;
 mod common;
-mod host;
+// mod host;
 mod join;
 mod practice;
 mod protocol;

@@ -3,10 +3,10 @@
 pub mod app;
 pub mod cli;
 pub mod events;
+pub mod game;
 pub mod ghost;
 pub mod highlighting;
 pub mod line;
-pub mod modes;
 pub mod network;
 pub mod record;
 pub mod session;
