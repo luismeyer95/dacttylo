@@ -9,6 +9,7 @@ use dacttylo::{
     events::AppEvent,
     game::game::Game,
     ghost::Ghost,
+    highlighting::{Highlighter, SyntectHighlighter},
     record::manager::RecordManager,
     stats::GameStats,
     utils::tui::{enter_tui_mode, leave_tui_mode},
@@ -16,7 +17,7 @@ use dacttylo::{
 use std::{fs::read_to_string, io::Stdout};
 use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
-use tui::{backend::CrosstermBackend, Terminal};
+use tui::{backend::CrosstermBackend, text::StyledGrapheme, Terminal};
 
 const THEME: &str = "Solarized (dark)";
 
@@ -44,6 +45,21 @@ pub async fn run_practice_session(
 
     leave_tui_mode(term)?;
     result
+}
+
+pub fn format_and_style<'t>(
+    text: &'t str,
+    file: &str,
+    theme: &str,
+) -> AsyncResult<Vec<Vec<StyledGrapheme<'t>>>> {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+
+    let hl = SyntectHighlighter::new()
+        .from_file((file).into())?
+        .theme(get_theme(theme))
+        .build()?;
+
+    Ok(hl.highlight(&lines))
 }
 
 async fn handle_events(

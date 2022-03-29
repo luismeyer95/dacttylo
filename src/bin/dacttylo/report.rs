@@ -65,7 +65,7 @@ async fn render_report(
             .margin(2)
             .constraints(
                 [
-                    Constraint::Min(6),
+                    Constraint::Max(5),
                     Constraint::Percentage(40),
                     Constraint::Percentage(40),
                 ]
@@ -235,7 +235,7 @@ fn render_chart(
 fn load_header_font() -> &'static FIGfont {
     static FONT: OnceCell<FIGfont> = OnceCell::new();
     FONT.get_or_init(|| {
-        let bytes = include_bytes!("figfonts/slant.flf");
+        let bytes = include_bytes!("figfonts/smslant.flf");
         let s = std::str::from_utf8(bytes).unwrap();
         FIGfont::from_content(s).unwrap()
     })

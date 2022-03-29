@@ -53,21 +53,6 @@ pub fn get_theme(theme: &str) -> &'static Theme {
     &ts.themes[theme]
 }
 
-pub fn format_and_style<'t>(
-    text: &'t str,
-    file: &str,
-    theme: &str,
-) -> AsyncResult<Vec<Vec<StyledGrapheme<'t>>>> {
-    let lines: Vec<&str> = text.split_inclusive('\n').collect();
-
-    let hl = SyntectHighlighter::new()
-        .from_file((file).into())?
-        .theme(get_theme(theme))
-        .build()?;
-
-    Ok(hl.highlight(&lines))
-}
-
 pub fn render<O>(
     term: &mut Terminal<CrosstermBackend<Stdout>>,
     game: &Game<O>,

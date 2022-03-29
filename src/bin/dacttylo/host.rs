@@ -230,15 +230,15 @@ fn handle_session_event<O>(
         match deserialize(&payload)? {
             DacttyloCommand::Input(ch) => {
                 game.opponents.process_input(username, ch).ok();
-
-                if game.main.is_done() && game.opponents.are_done() {
-                    return Ok(SessionState::End(SessionEnd::Finished));
-                }
             }
             DacttyloCommand::Forfeit => {
                 game.opponents.remove(username);
                 registered_users.remove(&peer_id);
             }
+        }
+
+        if game.main.is_done() && game.opponents.are_done() {
+            return Ok(SessionState::End(SessionEnd::Finished));
         }
     }
 
