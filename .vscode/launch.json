@@ -16,10 +16,10 @@
         },
 
         {
-            "name": "P2P Demo Join",
+            "name": "Dacttylo Join",
             "type": "lldb",
             "request": "launch",
-            "program": "${workspaceRoot}/target/debug/p2p",
+            "program": "${workspaceRoot}/target/debug/dacttylo",
             "args": ["join", "luis", "-u", "eric"],
             "cwd": "${workspaceRoot}",
             "internalConsoleOptions": "neverOpen",
@@ -27,11 +27,11 @@
         },
 
         {
-            "name": "P2P Demo Host",
+            "name": "Dacttylo Host",
             "type": "lldb",
             "request": "launch",
-            "program": "${workspaceRoot}/target/debug/p2p",
-            "args": ["host", "-u", "luis", "-f", "LICENSE"],
+            "program": "${workspaceRoot}/target/debug/dacttylo",
+            "args": ["host", "-u", "luis", "-f", "textfiles/basic.txt"],
             "cwd": "${workspaceRoot}",
             "internalConsoleOptions": "neverOpen",
             "console": "integratedTerminal"

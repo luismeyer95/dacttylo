@@ -98,20 +98,32 @@ impl<'a> SyntectHighlighterBuilder<'a> {
             self.syntax = syntax_set
                 .find_syntax_for_file(file.as_ref())
                 .map_err(|_| "error reading file")?
-                .ok_or("failed to load syntax for file")?;
+                .ok_or("failed to find syntax")?;
         }
 
         Ok(self)
     }
 
-    pub fn from_text<T>(mut self, text: &str) -> AsyncResult<Self>
+    pub fn from_text<T>(mut self, text: T) -> AsyncResult<Self>
     where
         T: AsRef<str>,
     {
         let (syntax_set, _) = syntect_load_defaults();
         self.syntax = syntax_set
-            .find_syntax_by_first_line(text)
-            .ok_or("failed to load syntax for file")?;
+            .find_syntax_by_first_line(text.as_ref())
+            .ok_or("failed to find syntax")?;
+
+        Ok(self)
+    }
+
+    pub fn from_syntax<T>(mut self, name: T) -> AsyncResult<Self>
+    where
+        T: AsRef<str>,
+    {
+        let (syntax_set, _) = syntect_load_defaults();
+        self.syntax = syntax_set
+            .find_syntax_by_name(name.as_ref())
+            .ok_or("failed to find syntax")?;
 
         Ok(self)
     }

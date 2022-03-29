@@ -1,5 +1,8 @@
 use dacttylo::cli::Commands;
 use dacttylo::utils::types::AsyncResult;
+use host::run_host_session;
+use join::run_join_session;
+use practice::run_practice_session;
 
 mod app;
 mod common;
@@ -24,14 +27,9 @@ async fn init_session() -> AsyncResult<()> {
     let cli = dacttylo::cli::parse();
 
     match cli.command {
-        Commands::Practice(practice_opts) => {
-            practice::run_practice_session(practice_opts).await?;
-        }
-        Commands::Host(host_opts) => {
-            host::run_host_session(host_opts).await?;
-        }
-        // Commands::Join { user, host } => {}
-        _ => panic!("Command not supported yet"),
+        Commands::Practice(opts) => run_practice_session(opts).await?,
+        Commands::Host(opts) => run_host_session(opts).await?,
+        Commands::Join(opts) => run_join_session(opts).await?,
     };
 
     Ok(())

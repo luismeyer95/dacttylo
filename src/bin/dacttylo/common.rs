@@ -97,7 +97,7 @@ pub fn render<O>(
             &game.main,
             &game.opponents,
             styled_lines,
-            game.theme,
+            &game.theme,
         );
     })?;
 

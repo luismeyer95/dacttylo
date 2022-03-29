@@ -18,6 +18,8 @@ use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
 use tui::{backend::CrosstermBackend, Terminal};
 
+const THEME: &str = "Solarized (dark)";
+
 pub async fn run_practice_session(
     practice_opts: PracticeOptions,
 ) -> AsyncResult<()> {
@@ -26,6 +28,7 @@ pub async fn run_practice_session(
         &text,
         if practice_opts.ghost { &["ghost"] } else { &[] },
         practice_opts,
+        THEME,
     )?;
 
     let mut term = enter_tui_mode(std::io::stdout())?;
@@ -48,7 +51,7 @@ async fn handle_events(
     mut game: Game<'_, PracticeOptions>,
     text: &str,
 ) -> AsyncResult<Option<SessionResult>> {
-    let styled_lines = format_and_style(text, &game.opts.file, game.theme)?;
+    let styled_lines = format_and_style(text, &game.opts.file, &game.theme)?;
     let mut stats = GameStats::default();
 
     if game.opts.ghost {

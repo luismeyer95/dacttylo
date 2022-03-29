@@ -11,8 +11,6 @@ use crate::{
     utils::types::AsyncResult,
 };
 
-const THEME: &str = "Solarized (dark)";
-
 pub struct Game<'t, O> {
     pub main: PlayerState<'t>,
     pub opponents: PlayerPool<'t>,
@@ -22,7 +20,7 @@ pub struct Game<'t, O> {
     pub events: EventAggregator<AppEvent>,
     pub opts: O,
 
-    pub theme: &'static str,
+    pub theme: String,
 }
 
 impl<'t, O> Game<'t, O>
@@ -33,6 +31,7 @@ where
         text: &'t str,
         opponents: &[&str],
         opts: O,
+        theme: &str,
     ) -> AsyncResult<Game<'t, O>> {
         let (client, events) = Self::configure_event_stream();
 
@@ -49,7 +48,7 @@ where
             client,
             events,
             opts,
-            theme: THEME,
+            theme: theme.to_owned(),
         })
     }
 
