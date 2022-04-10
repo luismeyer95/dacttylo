@@ -1,8 +1,8 @@
-use std::io::Stdout;
+use std::{io::Stdout, iter, time::Duration};
 
 use crossterm::event::Event;
 use dacttylo::{
-    stats::GameStats, utils::types::AsyncResult,
+    game::game::Game, stats::GameStats, utils::types::AsyncResult,
     widgets::figtext::FigTextWidget,
 };
 use figlet_rs::FIGfont;
@@ -27,6 +27,42 @@ pub struct SessionResult {
 pub struct Ranking {
     pub spot: usize,
     pub names: Vec<String>,
+}
+
+pub fn generate_session_result<O>(game: Game<'_, O>) -> SessionResult {
+    let mut ranking = game
+        .opponents
+        .players()
+        .iter()
+        .chain(iter::once((game.main.name(), &game.main)))
+        .filter_map(|(name, state)| {
+            if state.is_done() {
+                let completion_time =
+                    &state.recorder.record().inputs.last().unwrap().0;
+                Some((name.as_ref(), completion_time.duration))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<(&str, Duration)>>();
+
+    ranking.sort_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap());
+    let spot = ranking
+        .iter()
+        .position(|(name, _)| name == game.main.name())
+        .unwrap();
+    let ranking = ranking
+        .into_iter()
+        .map(|(name, _)| name.to_owned())
+        .collect();
+
+    SessionResult {
+        stats: game.stats,
+        ranking: Some(Ranking {
+            spot,
+            names: ranking,
+        }),
+    }
 }
 
 pub async fn display_session_report(

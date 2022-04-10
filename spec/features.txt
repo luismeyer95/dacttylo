@@ -88,5 +88,3 @@ Implementation:
     -> skip trailing wp
 
 ------------------------------------------------------------------------------
-
-Session Report Feature:

@@ -1,6 +1,0 @@
-Mode differences:
-    * opponent state setup
-    * event stream setup
-    * action on user typing a character
-    * handling session events
-    * end conditions

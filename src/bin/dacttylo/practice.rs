@@ -68,7 +68,6 @@ async fn handle_events(
     text: &str,
 ) -> AsyncResult<Option<SessionResult>> {
     let styled_lines = format_and_style(text, &game.opts.file, &game.theme)?;
-    let mut stats = GameStats::default();
 
     if game.opts.ghost {
         let mut ghost = initialize_ghost(text, game.client.clone())?;
@@ -76,17 +75,12 @@ async fn handle_events(
     }
 
     while let Some(event) = game.events.next().await {
-        let session_state = handle_event(event, &mut game, &mut stats)?;
+        let session_state = handle_event(event, &mut game)?;
 
         if let SessionState::End(end) = session_state {
             if let SessionEnd::Finished = &end {
                 update_record_state(text, &game.main, &game.opts)?;
-                return Ok(Some(generate_session_result(
-                    stats,
-                    game.main,
-                    game.opponents,
-                    game.opts,
-                )));
+                return Ok(Some(generate_session_result(game)));
             } else {
                 return Ok(None);
             }
@@ -98,15 +92,14 @@ async fn handle_events(
     unreachable!();
 }
 
-fn handle_event<'t, O>(
+fn handle_event<O>(
     event: AppEvent,
-    game: &mut Game<'t, O>,
-    stats: &mut GameStats,
+    game: &mut Game<'_, O>,
 ) -> AsyncResult<SessionState> {
     match event {
         AppEvent::Term(e) => return Ok(handle_term(e?, &mut game.main)),
         AppEvent::GhostInput(c) => handle_ghost_input(c, &mut game.opponents),
-        AppEvent::WpmTick => handle_wpm_tick(stats, &game.main),
+        AppEvent::WpmTick => handle_wpm_tick(&mut game.stats, &game.main),
         _ => (),
     };
 
@@ -154,34 +147,31 @@ pub fn initialize_ghost(
     Ok(Ghost::new(input_record, client))
 }
 
-fn generate_session_result(
-    stats: GameStats,
-    main: PlayerState,
-    opponents: PlayerPool,
-    practice_opts: PracticeOptions,
-) -> SessionResult {
-    if !practice_opts.ghost {
-        SessionResult {
-            stats,
-            ranking: None,
-        }
-    } else {
-        let (spot, ranked): (usize, Vec<&str>) =
-            if opponents.player("ghost").unwrap().is_done() {
-                (1, vec!["ghost", main.name.as_ref()])
-            } else {
-                (0, vec![main.name.as_ref(), "ghost"])
-            };
+// fn generate_session_result(
+//     game: &mut Game<'_, PracticeOptions>,
+// ) -> SessionResult {
+//     if !game.opts.ghost {
+//         SessionResult {
+//             stats: game.stats,
+//             ranking: None,
+//         }
+//     } else {
+//         let (spot, ranked): (usize, Vec<&str>) =
+//             if game.opponents.player("ghost").unwrap().is_done() {
+//                 (1, vec!["ghost", game.main.name.as_ref()])
+//             } else {
+//                 (0, vec![game.main.name.as_ref(), "ghost"])
+//             };
 
-        SessionResult {
-            stats,
-            ranking: Some(Ranking {
-                spot,
-                names: ranked.iter().map(|&s| s.to_string()).collect(),
-            }),
-        }
-    }
-}
+//         SessionResult {
+//             stats: game.stats,
+//             ranking: Some(Ranking {
+//                 spot,
+//                 names: ranked.iter().map(|&s| s.to_string()).collect(),
+//             }),
+//         }
+//     }
+// }
 
 fn update_record_state(
     text: &str,

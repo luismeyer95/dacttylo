@@ -5,7 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "(OSX) Launch",
+            "name": "Practice",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceRoot}/target/debug/dacttylo",
+            "args": ["practice", "-f", "textfiles/poem.txt"],
+            "cwd": "${workspaceRoot}",
+            "internalConsoleOptions": "neverOpen",
+            "console": "integratedTerminal"
+        },
+
+        {
+            "name": "Join",
             "type": "lldb",
             "request": "launch",
             "program": "${workspaceRoot}/target/debug/dacttylo",
@@ -16,18 +27,7 @@
         },
 
         {
-            "name": "Dacttylo Join",
-            "type": "lldb",
-            "request": "launch",
-            "program": "${workspaceRoot}/target/debug/dacttylo",
-            "args": ["join", "luis", "-u", "eric"],
-            "cwd": "${workspaceRoot}",
-            "internalConsoleOptions": "neverOpen",
-            "console": "integratedTerminal"
-        },
-
-        {
-            "name": "Dacttylo Host",
+            "name": "Host",
             "type": "lldb",
             "request": "launch",
             "program": "${workspaceRoot}/target/debug/dacttylo",

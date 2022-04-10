@@ -1,7 +1,9 @@
 use crate::{
     common::*,
     protocol::{DacttyloCommand, DacttyloMetadata},
-    report::{display_session_report, Ranking, SessionResult},
+    report::{
+        display_session_report, generate_session_result, Ranking, SessionResult,
+    },
 };
 use bincode::{deserialize, serialize};
 use chrono::{DateTime, Utc};
@@ -278,40 +280,4 @@ async fn handle_term<O>(
     }
 
     Ok(SessionState::Ongoing)
-}
-
-fn generate_session_result<O>(game: Game<'_, O>) -> SessionResult {
-    let mut ranking = game
-        .opponents
-        .players()
-        .iter()
-        .chain(iter::once((game.main.name(), &game.main)))
-        .filter_map(|(name, state)| {
-            if state.is_done() {
-                let completion_time =
-                    &state.recorder.record().inputs.last().unwrap().0;
-                Some((name.as_ref(), completion_time.duration))
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<(&str, Duration)>>();
-
-    ranking.sort_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap());
-    let spot = ranking
-        .iter()
-        .position(|(name, _)| name == game.main.name())
-        .unwrap();
-    let ranking = ranking
-        .into_iter()
-        .map(|(name, _)| name.to_owned())
-        .collect();
-
-    SessionResult {
-        stats: game.stats,
-        ranking: Some(Ranking {
-            spot,
-            names: ranking,
-        }),
-    }
 }
