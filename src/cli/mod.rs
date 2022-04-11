@@ -33,7 +33,7 @@ pub struct HostOptions {
     #[clap(short, long)]
     pub username: String,
 
-    /// Path to the file to race on
+    /// Path of the file to race on
     #[clap(short, long)]
     pub file: String,
 }
@@ -54,7 +54,7 @@ pub struct PracticeOptions {
     #[clap(short, long)]
     pub username: Option<String>,
 
-    /// Pick a text file to practice on
+    /// Path of the file to practice on
     #[clap(short, long)]
     pub file: String,
 
@@ -62,7 +62,7 @@ pub struct PracticeOptions {
     #[clap(short, long)]
     pub ghost: bool,
 
-    /// Update the input record for this file
+    /// Update the input record for this file after this session
     #[clap(arg_enum, short, long)]
     pub save: Option<Save>,
 }

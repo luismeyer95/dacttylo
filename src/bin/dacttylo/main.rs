@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use dacttylo::cli::Commands;
 use dacttylo::utils::types::AsyncResult;
 use host::run_host_session;

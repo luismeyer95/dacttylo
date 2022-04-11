@@ -1,4 +1,4 @@
-#![allow(clippy::new_without_default)]
+#![allow(clippy::new_without_default, unused)]
 
 pub mod app;
 pub mod cli;
