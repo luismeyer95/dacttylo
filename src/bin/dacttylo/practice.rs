@@ -147,32 +147,6 @@ pub fn initialize_ghost(
     Ok(Ghost::new(input_record, client))
 }
 
-// fn generate_session_result(
-//     game: &mut Game<'_, PracticeOptions>,
-// ) -> SessionResult {
-//     if !game.opts.ghost {
-//         SessionResult {
-//             stats: game.stats,
-//             ranking: None,
-//         }
-//     } else {
-//         let (spot, ranked): (usize, Vec<&str>) =
-//             if game.opponents.player("ghost").unwrap().is_done() {
-//                 (1, vec!["ghost", game.main.name.as_ref()])
-//             } else {
-//                 (0, vec![game.main.name.as_ref(), "ghost"])
-//             };
-
-//         SessionResult {
-//             stats: game.stats,
-//             ranking: Some(Ranking {
-//                 spot,
-//                 names: ranked.iter().map(|&s| s.to_string()).collect(),
-//             }),
-//         }
-//     }
-// }
-
 fn update_record_state(
     text: &str,
     main: &PlayerState,
