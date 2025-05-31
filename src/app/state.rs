@@ -13,7 +13,7 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InputResult {
-    Correct,
+    Correct(char),
     Wrong(char),
 }
 
@@ -52,7 +52,7 @@ impl<'txt> PlayerState<'txt> {
             // if cursor_ch == '\n' {
             //     self.skip_trailing_wp();
             // }
-            Correct
+            Correct(cursor_ch)
         } else {
             self.errors.insert(self.pos);
             Wrong(cursor_ch)
@@ -166,14 +166,17 @@ impl<'txt> PlayerPool<'txt> {
         Ok(input_result)
     }
 
-    pub fn advance_player(&mut self, username: &str) -> AsyncResult<()> {
+    pub fn process_player_input(
+        &mut self,
+        username: &str,
+        ch: char,
+    ) -> AsyncResult<()> {
         let player = self
             .players
             .get_mut(username)
             .ok_or("Player does not exist")?;
 
-        player.advance_cursor()?;
-
+        player.process_input(ch);
         Ok(())
     }
 

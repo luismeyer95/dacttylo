@@ -132,8 +132,8 @@ fn handle_term(
 }
 
 fn handle_ghost_input(input: InputResult, opponents: &mut PlayerPool) {
-    if let InputResult::Correct = input {
-        opponents.advance_player("ghost").unwrap();
+    if let InputResult::Correct(ch) = input {
+        opponents.process_player_input("ghost", ch).unwrap();
     }
 }
 
